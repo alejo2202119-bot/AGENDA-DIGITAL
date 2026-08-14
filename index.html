@@ -306,6 +306,15 @@
   .resultado-lugar{padding:9px 12px;font-size:.82rem;border-bottom:1px solid var(--gris-100);cursor:pointer;}
   .resultado-lugar:last-child{border-bottom:none;}
   .resultado-lugar:hover{background:var(--azul-050);}
+  .flecha-mi-ubicacion{
+    font-size:22px;line-height:1;color:var(--oro);
+    text-shadow:-1px -1px 0 #1c3a63, 1px -1px 0 #1c3a63, -1px 1px 0 #1c3a63, 1px 1px 0 #1c3a63, 0 2px 4px rgba(0,0,0,.4);
+  }
+  .lista-pasos-ruta{margin-top:10px;max-height:220px;overflow-y:auto;border:1px solid var(--gris-300);border-radius:8px;}
+  .paso-ruta{padding:8px 12px;font-size:.82rem;border-bottom:1px solid var(--gris-100);display:flex;gap:8px;align-items:baseline;}
+  .paso-ruta:last-child{border-bottom:none;}
+  .paso-num{background:var(--azul-900);color:#fff;border-radius:50%;width:18px;height:18px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem;font-weight:700;}
+  .paso-dist{color:var(--gris-500);font-size:.75rem;}
 
   /* ---------- Métricas ---------- */
   .tarjetas-resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px;}
@@ -1774,13 +1783,35 @@ document.getElementById("btnComoLlegar").addEventListener("click", function(){
   }, { enableHighAccuracy:true, timeout:10000 });
 });
 
+function calcularRumbo(lat1, lng1, lat2, lng2){
+  const rad = Math.PI/180;
+  const y = Math.sin((lng2-lng1)*rad) * Math.cos(lat2*rad);
+  const x = Math.cos(lat1*rad)*Math.sin(lat2*rad) - Math.sin(lat1*rad)*Math.cos(lat2*rad)*Math.cos((lng2-lng1)*rad);
+  return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
+}
+
+const TEXTOS_GIRO = {
+  "uturn":"da media vuelta", "sharp right":"gira fuerte a la derecha", "right":"gira a la derecha",
+  "slight right":"mantente a la derecha", "straight":"sigue derecho", "slight left":"mantente a la izquierda",
+  "left":"gira a la izquierda", "sharp left":"gira fuerte a la izquierda"
+};
+function textoManiobra(maniobra, nombreCalle){
+  const calle = nombreCalle ? (" en " + nombreCalle) : "";
+  if(maniobra.type === "depart") return "Sal" + calle;
+  if(maniobra.type === "arrive") return "Has llegado a tu destino";
+  if(maniobra.type === "roundabout" || maniobra.type === "rotary") return "Toma la rotonda" + calle;
+  const texto = TEXTOS_GIRO[maniobra.modifier];
+  if(texto) return texto.charAt(0).toUpperCase() + texto.slice(1) + calle;
+  return "Continúa" + calle;
+}
+
 function calcularRuta(latOrigen, lngOrigen){
   const resultado = document.getElementById("resultadoComoLlegar");
   resultado.innerHTML = '<div class="vacio">Calculando ruta...</div>';
   const destino = estado.ubicacionSeleccionada;
   const url = "https://router.project-osrm.org/route/v1/driving/"
     + lngOrigen+","+latOrigen+";"+destino.lng+","+destino.lat
-    + "?overview=full&geometries=geojson";
+    + "?overview=full&geometries=geojson&steps=true";
   fetch(url).then(function(r){
     if(!r.ok) throw new Error("error_http");
     return r.json();
@@ -1789,17 +1820,32 @@ function calcularRuta(latOrigen, lngOrigen){
     const ruta = data.routes[0];
     const km = (ruta.distance/1000).toFixed(1);
     const minutos = Math.round(ruta.duration/60);
+    const pasos = (ruta.legs && ruta.legs[0] && ruta.legs[0].steps) ? ruta.legs[0].steps : [];
+    const listaPasos = pasos.map(function(s, i){
+      const texto = textoManiobra(s.maneuver, s.name);
+      const dist = s.distance >= 1000 ? (s.distance/1000).toFixed(1)+" km" : Math.round(s.distance)+" m";
+      return '<div class="paso-ruta"><span class="paso-num">'+(i+1)+'</span>'+texto+(s.distance>0 ? ' <span class="paso-dist">— '+dist+'</span>' : '')+'</div>';
+    }).join("");
+
     resultado.innerHTML = '<div class="aviso-msg" style="background:#e7f7ee;color:#1c7a43;border-color:#bfe6cf;">'
-      + '📍 Distancia: <b>'+km+' km</b> · Tiempo estimado: <b>'+minutos+' min</b> (en carro, aproximado)</div>';
+      + '📍 Distancia: <b>'+km+' km</b> · Tiempo estimado: <b>'+minutos+' min</b> (en carro, aproximado)</div>'
+      + '<div class="lista-pasos-ruta">'+listaPasos+'</div>';
 
     if(mapaInstancia){
       if(rutaLayer) mapaInstancia.removeLayer(rutaLayer);
       if(marcadorMiUbicacion) mapaInstancia.removeLayer(marcadorMiUbicacion);
       const puntos = ruta.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
       rutaLayer = L.polyline(puntos, { color:"#2a4f80", weight:5 }).addTo(mapaInstancia);
-      marcadorMiUbicacion = L.circleMarker([latOrigen, lngOrigen], {
-        radius:8, color:"#fff", weight:2, fillColor:"#c8a24a", fillOpacity:1
-      }).addTo(mapaInstancia).bindPopup("Tu ubicación");
+
+      const rumbo = puntos.length > 1 ? calcularRumbo(puntos[0][0], puntos[0][1], puntos[1][0], puntos[1][1]) : 0;
+      const iconoFlecha = L.divIcon({
+        className: "",
+        html: '<div class="flecha-mi-ubicacion" style="transform:rotate('+rumbo+'deg);">▲</div>',
+        iconSize: [26,26],
+        iconAnchor: [13,13]
+      });
+      marcadorMiUbicacion = L.marker([latOrigen, lngOrigen], { icon: iconoFlecha })
+        .addTo(mapaInstancia).bindPopup("Tu ubicación · rumbo hacia el evento");
       mapaInstancia.fitBounds(rutaLayer.getBounds(), { padding:[24,24] });
     }
   }).catch(function(){
