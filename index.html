@@ -290,6 +290,15 @@
     background:var(--azul-050);display:flex;align-items:center;justify-content:center;
     color:var(--gris-500);font-size:.82rem;text-align:center;padding:16px;
   }
+  .resultados-lugar-lista{
+    position:absolute;left:0;right:0;top:100%;z-index:10;
+    background:#fff;border:1px solid var(--gris-300);border-radius:8px;
+    box-shadow:var(--sombra);max-height:200px;overflow-y:auto;
+  }
+  .resultados-lugar-lista:empty{display:none;}
+  .resultado-lugar{padding:9px 12px;font-size:.82rem;border-bottom:1px solid var(--gris-100);cursor:pointer;}
+  .resultado-lugar:last-child{border-bottom:none;}
+  .resultado-lugar:hover{background:var(--azul-050);}
 
   /* ---------- Métricas ---------- */
   .tarjetas-resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px;}
@@ -540,7 +549,11 @@
         </div>
 
         <div class="tab-panel" data-panel="ubicacion">
-          <div class="campo"><label>Buscar dirección</label><input type="text" id="evBusquedaMapa" placeholder="Escribe una dirección en Táchira..."></div>
+          <div class="campo" style="position:relative;">
+            <label>Buscar dirección</label>
+            <input type="text" id="evBusquedaMapa" placeholder="Escribe una dirección en Táchira..." autocomplete="off">
+            <div id="resultadosBusquedaMapa" class="resultados-lugar-lista"></div>
+          </div>
           <div id="mapaBusquedaBox"></div>
           <p style="font-size:.75rem;color:var(--gris-500);margin-top:8px;" id="ubicacionGuardadaTexto"></p>
         </div>
@@ -611,7 +624,7 @@ const CONFIG = {
     messagingSenderId: "51270179347",
     appId: "1:51270179347:web:fbdd39bcb0a0554ea0bde6"
   },
-  googleMapsApiKey: "AIzaSyAMlSZi1OOTJ1ytJLW59frHrPy-XhIuYh4", // se usa en el Paso 4 (mapa de Táchira)
+  // El mapa (Paso 4) usa OpenStreetMap/Leaflet, gratis y sin clave — no hace falta configurar nada aquí.
   claveAuditoria: "201017" // clave del botón secreto de control de accesos; cámbiala aquí cuando quieras
 };
 
@@ -1585,46 +1598,34 @@ function renderHistorial(hist){
   }).join("");
 }
 
-/* ---------- ubicación / mapa (Google Maps + Places Autocomplete, Táchira) ---------- */
+/* ---------- ubicación / mapa (Leaflet + OpenStreetMap, Táchira) ----------
+   Gratis, sin clave, sin cuenta y sin tarjeta: usa el mapa libre de
+   OpenStreetMap (tiles) y su buscador de direcciones (Nominatim), en vez
+   de Google Maps. */
 const TACHIRA_BOUNDS = { south:7.15, west:-72.65, north:8.45, east:-71.35 };
-const estadoMapas = { cargando:false, cargado:false, error:null, colaResolve:[], colaReject:[] };
-let mapaInstancia = null, marcadorInstancia = null, autocompleteInstancia = null;
-
-function cargarGoogleMapsAPI(){
+let leafletListo = null;
+function cargarLeaflet(){
+  if(!leafletListo){
+    leafletListo = Promise.all([
+      cargarEstiloExterno("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"),
+      cargarScriptExterno("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js")
+    ]);
+  }
+  return leafletListo;
+}
+function cargarEstiloExterno(href){
   return new Promise(function(resolve, reject){
-    if(!CONFIG.googleMapsApiKey){ reject(new Error("sin_key")); return; }
-    if(window.google && window.google.maps){ resolve(); return; }
-    if(estadoMapas.error){ reject(estadoMapas.error); return; }
-    estadoMapas.colaResolve.push(resolve);
-    estadoMapas.colaReject.push(reject);
-    if(estadoMapas.cargando) return;
-    estadoMapas.cargando = true;
-
-    window.__agendaMapsListo = function(){
-      estadoMapas.cargando = false;
-      estadoMapas.cargado = true;
-      estadoMapas.colaResolve.forEach(function(r){ r(); });
-      estadoMapas.colaResolve = []; estadoMapas.colaReject = [];
-    };
-    window.gm_authFailure = function(){
-      const err = new Error("limite_o_auth");
-      estadoMapas.cargando = false;
-      estadoMapas.error = err;
-      estadoMapas.colaReject.forEach(function(r){ r(err); });
-      estadoMapas.colaResolve = []; estadoMapas.colaReject = [];
-    };
-    const script = document.createElement("script");
-    script.src = "https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(CONFIG.googleMapsApiKey)+"&libraries=places&callback=__agendaMapsListo";
-    script.onerror = function(){
-      const err = new Error("carga_fallida");
-      estadoMapas.cargando = false;
-      estadoMapas.error = err;
-      estadoMapas.colaReject.forEach(function(r){ r(err); });
-      estadoMapas.colaResolve = []; estadoMapas.colaReject = [];
-    };
-    document.head.appendChild(script);
+    const l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = href;
+    l.onload = function(){ resolve(); };
+    l.onerror = function(){ reject(new Error("No se pudo cargar: " + href)); };
+    document.head.appendChild(l);
   });
 }
+
+let mapaInstancia = null, marcadorInstancia = null;
+let busquedaLugarTimeout = null;
 
 function renderUbicacionTab(){
   const texto = document.getElementById("ubicacionGuardadaTexto");
@@ -1634,78 +1635,80 @@ function renderUbicacionTab(){
   }else{
     texto.textContent = "Sin ubicación guardada todavía.";
   }
-  const box = document.getElementById("mapaBusquedaBox");
-  if(!CONFIG.googleMapsApiKey){
-    box.innerHTML = "Agrega tu clave de Google Maps en <code>CONFIG.googleMapsApiKey</code> para activar la búsqueda de direcciones y el mapa de Táchira.";
-  }else{
-    box.textContent = "Cargando mapa...";
-  }
+  document.getElementById("mapaBusquedaBox").textContent = "Cargando mapa...";
+  document.getElementById("resultadosBusquedaMapa").innerHTML = "";
+  mapaInstancia = null;
+  marcadorInstancia = null;
 }
 
 function activarMapaUbicacion(){
   const box = document.getElementById("mapaBusquedaBox");
-  if(!CONFIG.googleMapsApiKey){
-    box.innerHTML = "Agrega tu clave de Google Maps en <code>CONFIG.googleMapsApiKey</code> para activar la búsqueda de direcciones y el mapa de Táchira.";
-    return;
-  }
   box.textContent = "Cargando mapa...";
-  cargarGoogleMapsAPI().then(function(){
+  cargarLeaflet().then(function(){
     box.innerHTML = "";
     const centro = estado.ubicacionSeleccionada
-      ? { lat:Number(estado.ubicacionSeleccionada.lat), lng:Number(estado.ubicacionSeleccionada.lng) }
-      : TACHIRA_CENTRO;
+      ? [Number(estado.ubicacionSeleccionada.lat), Number(estado.ubicacionSeleccionada.lng)]
+      : [TACHIRA_CENTRO.lat, TACHIRA_CENTRO.lng];
 
-    mapaInstancia = new google.maps.Map(box, {
-      center: centro,
-      zoom: estado.ubicacionSeleccionada ? 15 : 9
+    mapaInstancia = L.map(box).setView(centro, estado.ubicacionSeleccionada ? 15 : 9);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(mapaInstancia);
+
+    marcadorInstancia = L.marker(centro, { draggable: true }).addTo(mapaInstancia);
+    if(!estado.ubicacionSeleccionada) mapaInstancia.removeLayer(marcadorInstancia);
+
+    marcadorInstancia.on("dragend", function(){
+      const pos = marcadorInstancia.getLatLng();
+      guardarUbicacionSeleccionada(pos.lat, pos.lng, estado.ubicacionSeleccionada ? estado.ubicacionSeleccionada.direccion : "Ubicación en el mapa");
     });
-    marcadorInstancia = new google.maps.Marker({
-      map: mapaInstancia,
-      position: centro,
-      draggable: true,
-      visible: !!estado.ubicacionSeleccionada
-    });
-    marcadorInstancia.addListener("dragend", function(){
-      const pos = marcadorInstancia.getPosition();
-      guardarUbicacionSeleccionada(pos.lat(), pos.lng(), estado.ubicacionSeleccionada ? estado.ubicacionSeleccionada.direccion : "Ubicación en el mapa");
-    });
-    mapaInstancia.addListener("click", function(ev){
-      marcadorInstancia.setPosition(ev.latLng);
-      marcadorInstancia.setVisible(true);
-      guardarUbicacionSeleccionada(ev.latLng.lat(), ev.latLng.lng(), "Ubicación en el mapa");
+    mapaInstancia.on("click", function(ev){
+      marcadorInstancia.setLatLng(ev.latlng);
+      if(!mapaInstancia.hasLayer(marcadorInstancia)) marcadorInstancia.addTo(mapaInstancia);
+      guardarUbicacionSeleccionada(ev.latlng.lat, ev.latlng.lng, "Ubicación en el mapa");
     });
 
-    const inputBusqueda = document.getElementById("evBusquedaMapa");
-    const bounds = new google.maps.LatLngBounds(
-      { lat:TACHIRA_BOUNDS.south, lng:TACHIRA_BOUNDS.west },
-      { lat:TACHIRA_BOUNDS.north, lng:TACHIRA_BOUNDS.east }
-    );
-    autocompleteInstancia = new google.maps.places.Autocomplete(inputBusqueda, {
-      bounds: bounds,
-      strictBounds: false,
-      componentRestrictions: { country: "ve" }
-    });
-    autocompleteInstancia.addListener("place_changed", function(){
-      const lugar = autocompleteInstancia.getPlace();
-      if(!lugar || !lugar.geometry){ return; }
-      const lat = lugar.geometry.location.lat();
-      const lng = lugar.geometry.location.lng();
-      mapaInstancia.setCenter({ lat:lat, lng:lng });
-      mapaInstancia.setZoom(15);
-      marcadorInstancia.setPosition({ lat:lat, lng:lng });
-      marcadorInstancia.setVisible(true);
-      guardarUbicacionSeleccionada(lat, lng, lugar.formatted_address || lugar.name || inputBusqueda.value);
-      if(!document.getElementById("evLugar").value.trim()){
-        document.getElementById("evLugar").value = lugar.formatted_address || lugar.name || "";
-      }
-    });
-  }).catch(function(err){
-    const mensaje = err && err.message==="limite_o_auth"
-      ? "No se pudo cargar el mapa: probablemente se alcanzó el límite diario de la clave de demostración de Google Maps. Puedes seguir escribiendo el lugar manualmente en el campo 'Lugar'; el mapa volverá a estar disponible cuando se reinicie el límite (usualmente al día siguiente)."
-      : "No se pudo cargar el mapa (problema de conexión). Puedes seguir escribiendo el lugar manualmente en el campo 'Lugar'.";
-    box.innerHTML = mensaje;
+    setTimeout(function(){ mapaInstancia.invalidateSize(); }, 100);
+  }).catch(function(){
+    box.innerHTML = "No se pudo cargar el mapa (problema de conexión). Puedes seguir escribiendo el lugar manualmente en el campo 'Lugar'.";
   });
 }
+
+document.getElementById("evBusquedaMapa").addEventListener("input", function(){
+  const texto = this.value.trim();
+  const lista = document.getElementById("resultadosBusquedaMapa");
+  clearTimeout(busquedaLugarTimeout);
+  if(texto.length < 3){ lista.innerHTML = ""; return; }
+  busquedaLugarTimeout = setTimeout(function(){
+    const bbox = TACHIRA_BOUNDS.west+","+TACHIRA_BOUNDS.south+","+TACHIRA_BOUNDS.east+","+TACHIRA_BOUNDS.north;
+    const url = "https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=ve&viewbox="+bbox+"&bounded=1&q="+encodeURIComponent(texto);
+    fetch(url).then(function(r){ return r.json(); }).then(function(resultados){
+      if(!resultados.length){ lista.innerHTML = '<div class="vacio" style="padding:8px;">Sin resultados.</div>'; return; }
+      lista.innerHTML = resultados.map(function(r, idx){
+        return '<div class="resultado-lugar" data-idx="'+idx+'">'+escapeHTML(r.display_name)+'</div>';
+      }).join("");
+      lista.querySelectorAll(".resultado-lugar").forEach(function(el){
+        el.addEventListener("click", function(){
+          const r = resultados[+el.getAttribute("data-idx")];
+          const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+          if(mapaInstancia){
+            mapaInstancia.setView([lat,lng], 15);
+            marcadorInstancia.setLatLng([lat,lng]);
+            if(!mapaInstancia.hasLayer(marcadorInstancia)) marcadorInstancia.addTo(mapaInstancia);
+          }
+          guardarUbicacionSeleccionada(lat, lng, r.display_name);
+          if(!document.getElementById("evLugar").value.trim()){
+            document.getElementById("evLugar").value = r.display_name;
+          }
+          lista.innerHTML = "";
+        });
+      });
+    }).catch(function(){
+      lista.innerHTML = '<div class="error-msg">No se pudo buscar (problema de conexión).</div>';
+    });
+  }, 600);
+});
 
 function guardarUbicacionSeleccionada(lat, lng, direccion){
   estado.ubicacionSeleccionada = { lat:lat, lng:lng, direccion:direccion };
@@ -1866,7 +1869,7 @@ function renderVistaBackup(){
       + '<div class="estado-conexion"><span class="punto-estado '+(DEMO_MODE?"demo":"firebase")+'"></span>'
       + '<b>'+(DEMO_MODE ? "Modo demostración (localStorage)" : "Conectado a Firebase")+'</b></div>'
       + '<p>'+(DEMO_MODE
-          ? "Para conectar Firebase real: abre <code>index.html</code>, busca el objeto <code>CONFIG.firebase</code> al inicio del script y pega ahí tu apiKey, authDomain, projectId, etc. Para el mapa, pega tu clave en <code>CONFIG.googleMapsApiKey</code>. No hace falta tocar nada más del código."
+          ? "Para conectar Firebase real: abre <code>index.html</code>, busca el objeto <code>CONFIG.firebase</code> al inicio del script y pega ahí tu apiKey, authDomain, projectId, etc. El mapa usa OpenStreetMap y no necesita configuración."
           : "Firebase está activo. Los eventos se guardan en la colección <code>eventos</code> y los usuarios/roles en <code>usuarios</code>.")
       + '</p>'
       + '<button class="btn btn-oro" id="btnBackupJSON">⬇ Descargar respaldo completo (JSON)</button>'
