@@ -531,25 +531,25 @@
         </div>
 
         <div class="tab-panel activo" data-panel="datos">
-          <div class="campo"><label>Título *</label><input type="text" id="evTitulo"></div>
+          <div class="campo"><label for="evTitulo">Título *</label><input type="text" id="evTitulo"></div>
           <div class="fila-2">
-            <div class="campo"><label>Inicio *</label><input type="datetime-local" id="evInicio"></div>
-            <div class="campo"><label>Fin *</label><input type="datetime-local" id="evFin"></div>
+            <div class="campo"><label for="evInicio">Inicio *</label><input type="datetime-local" id="evInicio"></div>
+            <div class="campo"><label for="evFin">Fin *</label><input type="datetime-local" id="evFin"></div>
           </div>
           <div class="fila-2">
-            <div class="campo"><label>Lugar</label><input type="text" id="evLugar"></div>
-            <div class="campo"><label>Responsable</label><input type="text" id="evResponsable"></div>
+            <div class="campo"><label for="evLugar">Lugar</label><input type="text" id="evLugar"></div>
+            <div class="campo"><label for="evResponsable">Responsable</label><input type="text" id="evResponsable"></div>
           </div>
           <div class="fila-2">
-            <div class="campo"><label>Tipo</label><select id="evTipo"></select></div>
-            <div class="campo"><label>Área</label><input type="text" id="evArea"></div>
+            <div class="campo"><label for="evTipo">Tipo</label><select id="evTipo"></select></div>
+            <div class="campo"><label for="evArea">Área</label><input type="text" id="evArea"></div>
           </div>
           <div class="fila-2">
-            <div class="campo"><label>Estado</label><select id="evEstado"></select></div>
-            <div class="campo"><label>Prioridad</label><select id="evPrioridad"></select></div>
+            <div class="campo"><label for="evEstado">Estado</label><select id="evEstado"></select></div>
+            <div class="campo"><label for="evPrioridad">Prioridad</label><select id="evPrioridad"></select></div>
           </div>
-          <div class="campo"><label>Confidencialidad</label><select id="evConfidencialidad"></select></div>
-          <div class="campo"><label>Notas</label><textarea id="evNotas" rows="3"></textarea></div>
+          <div class="campo"><label for="evConfidencialidad">Confidencialidad</label><select id="evConfidencialidad"></select></div>
+          <div class="campo"><label for="evNotas">Notas</label><textarea id="evNotas" rows="3"></textarea></div>
         </div>
 
         <div class="tab-panel" data-panel="checklist">
@@ -701,6 +701,21 @@ function etiqueta(lista, valor){
   return f ? f.l : (valor||"—");
 }
 
+/* Fecha del día calendario LOCAL (no UTC) en formato YYYY-MM-DD. Usar
+   toISOString().slice(0,10) da la fecha en UTC, que en Venezuela (UTC-4)
+   queda un día adelantada para cualquier hora local desde ~20:00 en
+   adelante — eso hacía que eventos nocturnos aparecieran archivados bajo
+   el día siguiente. */
+function fechaLocalISO(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const dia = String(d.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+dia;
+}
+function mesLocalISO(d){
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+}
+
 /* =====================================================================
    2) CAPA DE DATOS (Store) — misma interfaz para modo demo y modo Firebase.
    ===================================================================== */
@@ -741,7 +756,7 @@ if(DEMO_MODE){
     const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
     const u = usuarios.find(x=>x.usuario.toLowerCase()===String(usuarioInput).toLowerCase() && x.password===password);
     if(!u) throw new Error("Usuario o contraseña incorrectos.");
-    const sesion = { usuario:u.usuario, rol:u.rol };
+    const sesion = { usuario:u.nombre || u.usuario, rol:u.rol };
     // sessionStorage (no localStorage): la sesión se borra sola al cerrar la pestaña/navegador.
     sessionStorage.setItem(LS_SESION, JSON.stringify(sesion));
     await Store.registrarAcceso(sesion.usuario, sesion.rol);
@@ -809,14 +824,14 @@ if(DEMO_MODE){
   };
   Store.listarUsuarios = async function(){
     const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
-    return usuarios.map(function(u){ return { uid:u.usuario, usuario:u.usuario, rol:u.rol }; });
+    return usuarios.map(function(u){ return { uid:u.usuario, usuario:u.nombre || u.usuario, rol:u.rol }; });
   };
   Store.crearUsuario = async function(datos){
     const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
     if(usuarios.some(function(u){ return u.usuario.toLowerCase()===datos.correo.toLowerCase(); })){
       throw new Error("Ya existe un usuario con ese correo.");
     }
-    usuarios.push({ usuario:datos.correo, password:datos.password, rol:datos.rol });
+    usuarios.push({ usuario:datos.correo, nombre:datos.usuario, password:datos.password, rol:datos.rol });
     localStorage.setItem(LS_USUARIOS, JSON.stringify(usuarios));
     return datos.correo;
   };
@@ -996,7 +1011,7 @@ const estado = {
   usuario: null,       // {email, rol}
   eventos: [],          // todos los eventos no archivados visibles para el rol
   vistaActual: "diaria",
-  fechaDiaria: new Date().toISOString().slice(0,10),
+  fechaDiaria: fechaLocalISO(new Date()),
   eventoEnEdicion: null, // objeto evento completo si se está editando, null si es nuevo
   tabModalActiva: "datos",
   ubicacionSeleccionada: null // {lat,lng,direccion}
@@ -1007,7 +1022,7 @@ const estado = {
    ===================================================================== */
 function eventosDelDia(fechaISO){
   return estado.eventos.filter(function(e){
-    return !e.archivado && (e.fechaInicio || "").slice(0,10) === fechaISO;
+    return !e.archivado && e.fechaInicio && fechaLocalISO(new Date(e.fechaInicio)) === fechaISO;
   }).sort(function(a,b){ return (a.fechaInicio||"").localeCompare(b.fechaInicio||""); });
 }
 
@@ -1197,6 +1212,10 @@ document.getElementById("btnGuardarUsuario").addEventListener("click", async fun
 
 async function renderVistaUsuarios(){
   const cont = document.getElementById("listaUsuarios");
+  if(!estado.usuario || estado.usuario.rol !== "admin"){
+    cont.innerHTML = '<div class="error-msg">Solo un administrador puede ver esta sección.</div>';
+    return;
+  }
   cont.innerHTML = '<div class="vacio">Cargando...</div>';
   let usuarios;
   try{
@@ -1293,7 +1312,7 @@ document.getElementById("btnDiaSiguiente").addEventListener("click", function(){
 function moverDia(delta){
   const d = new Date(estado.fechaDiaria + "T00:00:00");
   d.setDate(d.getDate()+delta);
-  estado.fechaDiaria = d.toISOString().slice(0,10);
+  estado.fechaDiaria = fechaLocalISO(d);
   inputFechaDiaria.value = estado.fechaDiaria;
   renderVistaDiaria();
 }
@@ -1433,7 +1452,6 @@ function abrirModalEvento(id){
   estado.ubicacionSeleccionada = evento && evento.lat ? { lat:evento.lat, lng:evento.lng, direccion:evento.lugar } : null;
   document.getElementById("modalEventoError").innerHTML = "";
   document.getElementById("modalEventoTitulo").textContent = evento ? "Detalle del evento" : "Nuevo evento";
-  document.getElementById("btnArchivarEvento").style.display = evento ? "inline-flex" : "none";
 
   const vistaLectura = esVistaLectura();
   document.getElementById("vistaLecturaEvento").style.display = vistaLectura ? "block" : "none";
@@ -1591,6 +1609,7 @@ function pintarChecklist(){
   });
 }
 document.getElementById("btnRegenerarChecklist").addEventListener("click", function(){
+  if(checklistTemp.length && !confirm("Esto reemplaza el checklist actual por la plantilla del tipo de evento. Los ítems y marcas que ya tengas se van a perder. ¿Continuar?")) return;
   renderChecklist(plantillaChecklist(document.getElementById("evTipo").value));
 });
 document.getElementById("btnAgregarItemChecklist").addEventListener("click", function(){
@@ -1916,8 +1935,8 @@ document.getElementById("btnArchivarEvento").addEventListener("click", async fun
 function renderVistaMetricas(){
   const cont = document.getElementById("zonaMetricas");
   const hoy = new Date();
-  const mesActual = hoy.toISOString().slice(0,7);
-  const delMes = eventosVisibles().filter(function(e){ return (e.fechaInicio||"").slice(0,7)===mesActual; });
+  const mesActual = mesLocalISO(hoy);
+  const delMes = eventosVisibles().filter(function(e){ return e.fechaInicio && mesLocalISO(new Date(e.fechaInicio))===mesActual; });
 
   const porTipo = agrupar(delMes, "tipo", TIPOS);
   const porEstado = agrupar(delMes, "estado", ESTADOS);
@@ -2001,6 +2020,10 @@ document.getElementById("btnExportarPDF").addEventListener("click", async functi
    ===================================================================== */
 function renderVistaBackup(){
   const cont = document.getElementById("zonaBackup");
+  if(esVistaLectura()){
+    cont.innerHTML = '<div class="error-msg">Esta sección no está disponible para el rol de lectura.</div>';
+    return;
+  }
   cont.innerHTML =
     '<div class="panel-config">'
       + '<div class="estado-conexion"><span class="punto-estado '+(DEMO_MODE?"demo":"firebase")+'"></span>'
