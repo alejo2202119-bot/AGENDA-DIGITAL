@@ -244,6 +244,27 @@
   .banner-responsable-dia input{flex:1;min-width:160px;border:1px solid var(--gris-300);border-radius:6px;padding:6px 10px;font-size:.85rem;}
   .banner-responsable-dia button{font-size:.75rem;padding:6px 12px;}
 
+  .grid-semana-envoltorio{overflow-x:auto;padding-bottom:6px;}
+  .grid-semana{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:10px;min-width:920px;}
+  .dia-semana-col{background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);display:flex;flex-direction:column;min-height:160px;}
+  .dia-semana-col.es-hoy{border-color:var(--oro);box-shadow:0 0 0 1px var(--oro);}
+  .dia-semana-cab{padding:10px 12px;border-bottom:1px solid var(--gris-100);cursor:pointer;}
+  .dia-semana-cab:hover{background:var(--azul-050);}
+  .dia-semana-cab .nombre-dia{font-size:.72rem;color:var(--gris-500);text-transform:uppercase;font-weight:700;}
+  .dia-semana-cab .num-dia{font-size:1.05rem;font-weight:700;color:var(--azul-950);}
+  .dia-semana-cuerpo{padding:8px;flex:1;display:flex;flex-direction:column;gap:6px;}
+  .mini-evento-semana{
+    background:var(--azul-050);border-radius:6px;padding:6px 8px;font-size:.72rem;cursor:pointer;
+    border-left:3px solid var(--gris-300);
+  }
+  .mini-evento-semana:hover{background:var(--azul-100);}
+  .mini-evento-semana.sem-verde{border-left-color:var(--verde);}
+  .mini-evento-semana.sem-amarillo{border-left-color:var(--amarillo);}
+  .mini-evento-semana.sem-rojo{border-left-color:var(--rojo);}
+  .mini-evento-semana .hora-mini{font-weight:700;color:var(--azul-900);}
+  .mini-evento-semana .titulo-mini{color:var(--gris-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dia-semana-vacio{color:var(--gris-500);font-size:.72rem;text-align:center;padding:14px 4px;}
+
   .cabecera-vista{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
   .acciones-vista{display:flex;gap:8px;flex-wrap:wrap;}
 
@@ -454,6 +475,7 @@
       <div class="subtitulo">DESPACHO DEL GOBERNADOR</div>
     </div>
     <div class="nav-item activo" data-vista="diaria">📅 Vista diaria</div>
+    <div class="nav-item" data-vista="semana">📆 Semana</div>
     <div class="nav-item" data-vista="eventos">🗂️ Eventos</div>
     <div class="nav-item" data-vista="metricas">📊 Métricas</div>
     <div class="nav-item" data-vista="backup">⚙️ Config / Respaldo</div>
@@ -493,6 +515,22 @@
       <div id="alertaChoqueDiaria"></div>
       <div class="banner-responsable-dia" id="bannerResponsableDia"></div>
       <div class="lista-eventos" id="listaEventosDiaria"></div>
+    </div>
+
+    <div class="zona" id="zonaSemana" style="display:none;">
+      <div class="cabecera-vista">
+        <div class="acciones-vista">
+          <button class="btn btn-secundario" id="btnSemanaAnterior">◀</button>
+          <span id="rangoSemanaTexto" style="font-weight:700;color:var(--azul-950);white-space:nowrap;"></span>
+          <button class="btn btn-secundario" id="btnSemanaSiguiente">▶</button>
+        </div>
+        <div class="acciones-vista">
+          <button class="btn btn-secundario" id="btnHoySemana">Esta semana</button>
+        </div>
+      </div>
+      <div class="grid-semana-envoltorio">
+        <div class="grid-semana" id="gridSemana"></div>
+      </div>
     </div>
 
     <div class="zona" id="zonaEventos" style="display:none;">
@@ -615,6 +653,7 @@
     <div class="modal-footer">
       <button class="btn btn-peligro" id="btnArchivarEvento" style="display:none;">Archivar evento</button>
       <button class="btn btn-secundario" id="btnReprogramarEvento" style="display:none;">🔁 Reprogramar</button>
+      <button class="btn btn-secundario" id="btnDuplicarEvento" style="display:none;">📋 Duplicar</button>
       <button class="btn btn-secundario" id="btnCancelarModalEvento">Cancelar</button>
       <button class="btn btn-primario" id="btnGuardarEvento">Guardar</button>
     </div>
@@ -788,6 +827,19 @@ function datetimeLocalValor(iso){
   const h = String(d.getHours()).padStart(2,"0");
   const mi = String(d.getMinutes()).padStart(2,"0");
   return y+"-"+mo+"-"+dia+"T"+h+":"+mi;
+}
+/* Devuelve el lunes (YYYY-MM-DD, local) de la semana que contiene fechaISO. */
+function inicioSemana(fechaISO){
+  const d = new Date(fechaISO + "T00:00:00");
+  const dow = d.getDay(); // 0=domingo ... 6=sábado
+  const diff = (dow===0) ? -6 : (1-dow);
+  d.setDate(d.getDate()+diff);
+  return fechaLocalISO(d);
+}
+function sumarDiasISO(fechaISO, dias){
+  const d = new Date(fechaISO + "T00:00:00");
+  d.setDate(d.getDate()+dias);
+  return fechaLocalISO(d);
 }
 
 /* =====================================================================
@@ -1129,6 +1181,7 @@ const estado = {
   eventos: [],          // todos los eventos no archivados visibles para el rol
   vistaActual: "diaria",
   fechaDiaria: fechaLocalISO(new Date()),
+  fechaSemana: inicioSemana(fechaLocalISO(new Date())), // lunes de la semana mostrada
   eventoEnEdicion: null, // objeto evento completo si se está editando, null si es nuevo
   tabModalActiva: "datos",
   ubicacionSeleccionada: null // {lat,lng,direccion}
@@ -1276,7 +1329,8 @@ const ICONOS_ACCION = {
   cambiar_rol: "🔧 ",
   responsable_dia: "📌 ",
   exportar_pdf: "⬇ ",
-  exportar_backup: "⬇ "
+  exportar_backup: "⬇ ",
+  exportar_ics: "📅 "
 };
 document.getElementById("btnVerAuditoria").addEventListener("click", async function(){
   const clave = document.getElementById("inputClaveAuditoria").value;
@@ -1416,11 +1470,12 @@ function cambiarVista(v){
     el.classList.toggle("activo", el.getAttribute("data-vista")===v);
   });
   document.getElementById("zonaDiaria").style.display = v==="diaria" ? "block" : "none";
+  document.getElementById("zonaSemana").style.display = v==="semana" ? "block" : "none";
   document.getElementById("zonaEventos").style.display = v==="eventos" ? "block" : "none";
   document.getElementById("zonaMetricas").style.display = v==="metricas" ? "block" : "none";
   document.getElementById("zonaBackup").style.display = v==="backup" ? "block" : "none";
   document.getElementById("zonaUsuarios").style.display = v==="usuarios" ? "block" : "none";
-  const titulos = { diaria:"Vista diaria", eventos:"Eventos", metricas:"Métricas", backup:"Configuración / Respaldo", usuarios:"Usuarios" };
+  const titulos = { diaria:"Vista diaria", semana:"Semana", eventos:"Eventos", metricas:"Métricas", backup:"Configuración / Respaldo", usuarios:"Usuarios" };
   document.getElementById("tituloVista").textContent = titulos[v];
   document.getElementById("barraLateral").classList.remove("abierta");
   renderVistaActual();
@@ -1431,6 +1486,7 @@ document.getElementById("btnMenuMovil").addEventListener("click", function(){
 
 function renderVistaActual(){
   if(estado.vistaActual==="diaria") renderVistaDiaria();
+  else if(estado.vistaActual==="semana") renderVistaSemana();
   else if(estado.vistaActual==="eventos") renderVistaEventos();
   else if(estado.vistaActual==="metricas") renderVistaMetricas();
   else if(estado.vistaActual==="backup") renderVistaBackup();
@@ -1554,6 +1610,78 @@ function escapeHTML(s){
 }
 
 /* =====================================================================
+   8b) VISTA SEMANAL
+   ===================================================================== */
+const NOMBRES_DIA = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+document.getElementById("btnSemanaAnterior").addEventListener("click", function(){
+  estado.fechaSemana = sumarDiasISO(estado.fechaSemana, -7);
+  renderVistaSemana();
+});
+document.getElementById("btnSemanaSiguiente").addEventListener("click", function(){
+  estado.fechaSemana = sumarDiasISO(estado.fechaSemana, 7);
+  renderVistaSemana();
+});
+document.getElementById("btnHoySemana").addEventListener("click", function(){
+  estado.fechaSemana = inicioSemana(fechaLocalISO(new Date()));
+  renderVistaSemana();
+});
+
+function renderVistaSemana(){
+  const hoyISO = fechaLocalISO(new Date());
+  const dias = [];
+  for(let i=0;i<7;i++) dias.push(sumarDiasISO(estado.fechaSemana, i));
+
+  const primerDia = new Date(dias[0]+"T00:00:00");
+  const ultimoDia = new Date(dias[6]+"T00:00:00");
+  const opciones = { day:"numeric", month:"short" };
+  document.getElementById("rangoSemanaTexto").textContent =
+    primerDia.toLocaleDateString("es-VE", opciones) + " – " + ultimoDia.toLocaleDateString("es-VE", { day:"numeric", month:"short", year:"numeric" });
+
+  const todosVisibles = eventosVisibles();
+  const choquesTotales = calcularChoques(todosVisibles);
+
+  const grid = document.getElementById("gridSemana");
+  grid.innerHTML = dias.map(function(fechaISO, idx){
+    const deEsteDia = todosVisibles.filter(function(e){
+      return e.fechaInicio && fechaLocalISO(new Date(e.fechaInicio))===fechaISO;
+    }).sort(function(a,b){ return (a.fechaInicio||"").localeCompare(b.fechaInicio||""); });
+
+    const numDia = new Date(fechaISO+"T00:00:00").getDate();
+    const cuerpo = deEsteDia.length
+      ? deEsteDia.map(function(e){
+          const sem = calcularSemaforo(e, choquesTotales.has(e.id));
+          return '<div class="mini-evento-semana sem-'+sem+'" data-id="'+e.id+'">'
+            + '<div class="hora-mini">'+horaCorta(e.fechaInicio)+'</div>'
+            + '<div class="titulo-mini">'+escapeHTML(e.titulo||"(sin título)")+'</div>'
+            + '</div>';
+        }).join("")
+      : '<div class="dia-semana-vacio">Sin eventos</div>';
+
+    return '<div class="dia-semana-col'+(fechaISO===hoyISO?" es-hoy":"")+'">'
+      + '<div class="dia-semana-cab" data-fecha="'+fechaISO+'">'
+        + '<div class="nombre-dia">'+NOMBRES_DIA[idx]+'</div>'
+        + '<div class="num-dia">'+numDia+'</div>'
+      + '</div>'
+      + '<div class="dia-semana-cuerpo">'+cuerpo+'</div>'
+    + '</div>';
+  }).join("");
+
+  grid.querySelectorAll(".dia-semana-cab").forEach(function(el){
+    el.addEventListener("click", function(){
+      estado.fechaDiaria = el.getAttribute("data-fecha");
+      document.getElementById("inputFechaDiaria").value = estado.fechaDiaria;
+      cambiarVista("diaria");
+    });
+  });
+  grid.querySelectorAll(".mini-evento-semana").forEach(function(el){
+    el.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      abrirModalEvento(el.getAttribute("data-id"));
+    });
+  });
+}
+
+/* =====================================================================
    9) VISTA EVENTOS (lista completa con filtros)
    ===================================================================== */
 (function initFiltros(){
@@ -1637,6 +1765,7 @@ function abrirModalEvento(id){
   document.getElementById("btnGuardarEvento").style.display = vistaLectura ? "none" : "inline-flex";
   document.getElementById("btnArchivarEvento").style.display = (evento && !vistaLectura) ? "inline-flex" : "none";
   document.getElementById("btnReprogramarEvento").style.display = (evento && !vistaLectura) ? "inline-flex" : "none";
+  document.getElementById("btnDuplicarEvento").style.display = (evento && !vistaLectura) ? "inline-flex" : "none";
 
   if(vistaLectura){
     const cont = document.getElementById("vistaLecturaEvento");
@@ -2175,6 +2304,48 @@ document.getElementById("btnConfirmarReprogramar").addEventListener("click", asy
   }
 });
 
+/* ---------- Duplicar evento (para compromisos que se repiten) ---------- */
+document.getElementById("btnDuplicarEvento").addEventListener("click", function(){
+  if(!estado.eventoEnEdicion) return;
+  const original = estado.eventoEnEdicion;
+  const nuevoInicioISO = original.fechaInicio ? sumarDiasISOCompleto(original.fechaInicio, 7) : "";
+  const nuevoFinISO = original.fechaFin ? sumarDiasISOCompleto(original.fechaFin, 7) : "";
+
+  estado.eventoEnEdicion = null;
+  estado.ubicacionSeleccionada = original.lat ? { lat:original.lat, lng:original.lng, direccion:original.lugar } : null;
+
+  document.getElementById("modalEventoError").innerHTML = "";
+  document.getElementById("modalEventoTitulo").textContent = "Nuevo evento (copia)";
+  document.getElementById("btnArchivarEvento").style.display = "none";
+  document.getElementById("btnReprogramarEvento").style.display = "none";
+  document.getElementById("btnDuplicarEvento").style.display = "none";
+
+  document.getElementById("evTitulo").value = original.titulo || "";
+  document.getElementById("evInicio").value = datetimeLocalValor(nuevoInicioISO);
+  document.getElementById("evFin").value = datetimeLocalValor(nuevoFinISO);
+  document.getElementById("evLugar").value = original.lugar || "";
+  document.getElementById("evResponsable").value = original.responsable || "";
+  document.getElementById("evAsistenciaJefe").value = original.asistenciaJefe || "titular";
+  document.getElementById("evDelegadoNombre").value = original.delegadoNombre || "";
+  document.getElementById("campoDelegadoNombre").style.display = (document.getElementById("evAsistenciaJefe").value==="delegado") ? "block" : "none";
+  document.getElementById("evTipo").value = original.tipo || "otro";
+  document.getElementById("evArea").value = original.area || "";
+  document.getElementById("evEstado").value = "borrador";
+  document.getElementById("evPrioridad").value = original.prioridad || "media";
+  document.getElementById("evConfidencialidad").value = original.nivelConfidencialidad || "interno";
+  document.getElementById("evNotas").value = original.notas || "";
+
+  renderChecklist((original.checklistProtocolo||[]).map(function(it){ return { item:it.item, cumplido:false }; }));
+  renderHistorial([]);
+  renderUbicacionTab();
+  document.querySelectorAll(".tab-btn")[0].click();
+});
+function sumarDiasISOCompleto(iso, dias){
+  const d = new Date(iso);
+  d.setDate(d.getDate()+dias);
+  return d.toISOString();
+}
+
 /* =====================================================================
    11) MÉTRICAS
    ===================================================================== */
@@ -2265,6 +2436,36 @@ document.getElementById("btnExportarPDF").addEventListener("click", async functi
 /* =====================================================================
    13) CONFIGURACIÓN / RESPALDO
    ===================================================================== */
+/* ---------- Exportar a calendario (.ics) — formato estándar iCalendar ---------- */
+function formatoFechaICS(iso){
+  return new Date(iso).toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
+}
+function escaparTextoICS(s){
+  return String(s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
+}
+function generarICS(eventos){
+  const lineas = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Agenda Digital//Despacho del Gobernador//ES","CALSCALE:GREGORIAN"];
+  eventos.forEach(function(e){
+    if(!e.fechaInicio) return;
+    lineas.push("BEGIN:VEVENT");
+    lineas.push("UID:"+e.id+"@agenda-digital");
+    lineas.push("DTSTAMP:"+formatoFechaICS(new Date().toISOString()));
+    lineas.push("DTSTART:"+formatoFechaICS(e.fechaInicio));
+    if(e.fechaFin) lineas.push("DTEND:"+formatoFechaICS(e.fechaFin));
+    lineas.push("SUMMARY:"+escaparTextoICS(e.titulo));
+    if(e.lugar) lineas.push("LOCATION:"+escaparTextoICS(e.lugar));
+    const descripcion = [
+      e.responsable ? ("Responsable: "+e.responsable) : "",
+      e.asistenciaJefe==="delegado" ? ("Asiste en representación: "+(e.delegadoNombre||"")) : "",
+      e.notas || ""
+    ].filter(Boolean).join("\n");
+    if(descripcion) lineas.push("DESCRIPTION:"+escaparTextoICS(descripcion));
+    lineas.push("END:VEVENT");
+  });
+  lineas.push("END:VCALENDAR");
+  return lineas.join("\r\n");
+}
+
 function renderVistaBackup(){
   const cont = document.getElementById("zonaBackup");
   if(esVistaLectura()){
@@ -2280,6 +2481,8 @@ function renderVistaBackup(){
           : "Firebase está activo. Los eventos se guardan en la colección <code>eventos</code> y los usuarios/roles en <code>usuarios</code>.")
       + '</p>'
       + '<button class="btn btn-oro" id="btnBackupJSON">⬇ Descargar respaldo completo (JSON)</button>'
+      + '<button class="btn btn-secundario" id="btnExportarICS" style="margin-left:8px;">📅 Exportar a calendario (.ics)</button>'
+      + '<p style="font-size:.75rem;color:var(--gris-500);margin-top:8px;">El archivo .ics se puede importar en Google Calendar, Outlook o el calendario del teléfono para verlo también fuera de la Agenda.</p>'
     + '</div>';
 
   document.getElementById("btnBackupJSON").addEventListener("click", async function(){
@@ -2294,6 +2497,21 @@ function renderVistaBackup(){
     a.remove();
     URL.revokeObjectURL(url);
     Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "exportar_backup", "Descargó un respaldo completo de todos los eventos (" + datos.length + " eventos).");
+  });
+
+  document.getElementById("btnExportarICS").addEventListener("click", function(){
+    const activos = eventosVisibles();
+    const contenido = generarICS(activos);
+    const blob = new Blob([contenido], { type:"text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "agenda-digital-" + fechaLocalISO(new Date()) + ".ics";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "exportar_ics", "Exportó " + activos.length + " eventos a calendario (.ics).");
   });
 }
 
