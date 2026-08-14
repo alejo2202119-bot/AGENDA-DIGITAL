@@ -123,6 +123,15 @@
     font-size:.78rem;color:var(--gris-500);line-height:1.6;
   }
   .demo-cuentas b{color:var(--gris-700);}
+  #btnAuditoriaSecreta{
+    display:block;margin:18px auto 0;background:none;border:none;
+    color:var(--gris-300);font-size:.85rem;opacity:.5;padding:6px;
+  }
+  #btnAuditoriaSecreta:hover{opacity:1;color:var(--gris-500);}
+  .acceso-fila{padding:9px 0;border-bottom:1px solid var(--gris-100);font-size:.85rem;display:flex;justify-content:space-between;gap:10px;}
+  .acceso-fila .quien{font-weight:600;color:var(--gris-900);}
+  .acceso-fila .rol{font-size:.7rem;color:var(--gris-500);text-transform:uppercase;}
+  .acceso-fila .cuando{font-size:.75rem;color:var(--gris-500);white-space:nowrap;}
 
   /* ---------- Shell principal ---------- */
   #appShell{display:none;min-height:100vh;}
@@ -321,8 +330,8 @@
     <div id="loginDemoAviso"></div>
     <form id="formLogin">
       <div class="campo">
-        <label for="loginEmail">Correo</label>
-        <input type="email" id="loginEmail" required autocomplete="username">
+        <label for="loginUsuario">Usuario</label>
+        <input type="text" id="loginUsuario" required autocomplete="username">
       </div>
       <div class="campo">
         <label for="loginPass">Contraseña</label>
@@ -331,6 +340,31 @@
       <button type="submit" class="btn btn-primario btn-bloque">Ingresar</button>
     </form>
     <div class="demo-cuentas" id="cuentasDemoInfo"></div>
+    <button type="button" id="btnAuditoriaSecreta" title="Control de accesos">🔒</button>
+  </div>
+</div>
+
+<!-- =================== MODAL AUDITORÍA (control de accesos) =================== -->
+<div class="fondo-modal" id="fondoModalAuditoria">
+  <div class="caja-modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h3 id="tituloModalAuditoria">Control de accesos</h3>
+      <button id="btnCerrarModalAuditoria">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="auditoriaClaveVista">
+        <p style="font-size:.85rem;color:var(--gris-700);">Escribe la clave de auditoría para ver el registro de accesos.</p>
+        <div id="auditoriaError"></div>
+        <div class="campo">
+          <label for="inputClaveAuditoria">Clave de auditoría</label>
+          <input type="password" id="inputClaveAuditoria" autocomplete="off">
+        </div>
+        <button class="btn btn-primario btn-bloque" id="btnVerAuditoria">Ver accesos</button>
+      </div>
+      <div id="auditoriaListaVista" style="display:none;">
+        <div id="listaAccesos"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -492,12 +526,23 @@ const CONFIG = {
     messagingSenderId: "51270179347",
     appId: "1:51270179347:web:fbdd39bcb0a0554ea0bde6"
   },
-  googleMapsApiKey: "AIzaSyAMlSZi1OOTJ1ytJLW59frHrPy-XhIuYh4" // se usa en el Paso 4 (mapa de Táchira)
+  googleMapsApiKey: "AIzaSyAMlSZi1OOTJ1ytJLW59frHrPy-XhIuYh4", // se usa en el Paso 4 (mapa de Táchira)
+  claveAuditoria: "AUDITORIA2026" // clave del botón secreto de control de accesos; cámbiala aquí cuando quieras
 };
 
 const DEMO_MODE = !CONFIG.firebase.apiKey;
 
 const TACHIRA_CENTRO = { lat: 7.7669, lng: -72.2250 };
+
+/* Firebase Authentication solo acepta correos. El login de la app usa
+   "usuario" (sin @), así que aquí lo convertimos a un correo interno
+   fijo que nunca se muestra ni se usa para enviar nada. */
+function usuarioToEmailInterno(usuario){
+  const limpio = String(usuario||"")
+    .normalize("NFD").replace(/[̀-ͯ]/g,"") // quita acentos
+    .toLowerCase().trim().replace(/\s+/g,".").replace(/[^a-z0-9.]/g,"");
+  return limpio + "@agenda-digital.local";
+}
 
 const TIPOS = [
   { v:"acto_publico", l:"Acto público" },
@@ -543,17 +588,21 @@ const Store = { modo: DEMO_MODE ? "demo" : "firebase" };
 const LS_USUARIOS = "agenda_demo_usuarios";
 const LS_EVENTOS = "agenda_demo_eventos";
 const LS_SESION = "agenda_demo_sesion";
+const LS_ACCESOS = "agenda_demo_accesos";
 
 function demoSeed(){
   if(!localStorage.getItem(LS_USUARIOS)){
     localStorage.setItem(LS_USUARIOS, JSON.stringify([
-      { email:"admin@demo.com", password:"admin123", rol:"admin" },
-      { email:"editor@demo.com", password:"editor123", rol:"editor" },
-      { email:"lectura@demo.com", password:"lectura123", rol:"lectura" }
+      { usuario:"admin", password:"admin123", rol:"admin" },
+      { usuario:"editor", password:"editor123", rol:"editor" },
+      { usuario:"lectura", password:"lectura123", rol:"lectura" }
     ]));
   }
   if(!localStorage.getItem(LS_EVENTOS)){
     localStorage.setItem(LS_EVENTOS, JSON.stringify([]));
+  }
+  if(!localStorage.getItem(LS_ACCESOS)){
+    localStorage.setItem(LS_ACCESOS, JSON.stringify([]));
   }
 }
 function demoGetEventos(){
@@ -566,12 +615,13 @@ function demoSaveEventos(arr){
 if(DEMO_MODE){
   demoSeed();
 
-  Store.login = async function(email, password){
+  Store.login = async function(usuarioInput, password){
     const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
-    const u = usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase() && x.password===password);
-    if(!u) throw new Error("Correo o contraseña incorrectos.");
-    const sesion = { email:u.email, rol:u.rol };
+    const u = usuarios.find(x=>x.usuario.toLowerCase()===String(usuarioInput).toLowerCase() && x.password===password);
+    if(!u) throw new Error("Usuario o contraseña incorrectos.");
+    const sesion = { usuario:u.usuario, rol:u.rol };
     localStorage.setItem(LS_SESION, JSON.stringify(sesion));
+    await Store.registrarAcceso(sesion.usuario, sesion.rol);
     return sesion;
   };
   Store.logout = async function(){ localStorage.removeItem(LS_SESION); };
@@ -587,7 +637,7 @@ if(DEMO_MODE){
     const eventos = demoGetEventos();
     const nuevo = Object.assign({}, data, {
       id: "ev_" + Date.now() + "_" + Math.random().toString(36).slice(2,7),
-      creadoPor: usuario.email,
+      creadoPor: usuario.usuario,
       fechaCreacion: new Date().toISOString(),
       archivado: false,
       historialCambios: []
@@ -611,7 +661,7 @@ if(DEMO_MODE){
           campo: campo,
           valorAnterior: valorAnterior===undefined ? "" : valorAnterior,
           valorNuevo: valorNuevo===undefined ? "" : valorNuevo,
-          usuario: usuario.email,
+          usuario: usuario.usuario,
           fecha: new Date().toISOString()
         });
       }
@@ -625,6 +675,15 @@ if(DEMO_MODE){
   Store.exportarBackupJSON = async function(){
     return demoGetEventos();
   };
+  Store.registrarAcceso = async function(usuario, rol){
+    const accesos = JSON.parse(localStorage.getItem(LS_ACCESOS) || "[]");
+    accesos.push({ usuario:usuario, rol:rol, fecha:new Date().toISOString() });
+    localStorage.setItem(LS_ACCESOS, JSON.stringify(accesos));
+  };
+  Store.obtenerAccesos = async function(){
+    const accesos = JSON.parse(localStorage.getItem(LS_ACCESOS) || "[]");
+    return accesos.slice().reverse();
+  };
 }
 
 /* ---------- Implementación FIREBASE ---------- */
@@ -634,11 +693,19 @@ if(!DEMO_MODE){
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    Store.login = async function(email, password){
-      const cred = await auth.signInWithEmailAndPassword(email, password);
+    Store.login = async function(usuarioInput, password){
+      const emailInterno = usuarioToEmailInterno(usuarioInput);
+      let cred;
+      try{
+        cred = await auth.signInWithEmailAndPassword(emailInterno, password);
+      }catch(e){
+        throw new Error("Usuario o contraseña incorrectos.");
+      }
       const doc = await db.collection("usuarios").doc(cred.user.uid).get();
       if(!doc.exists) throw new Error("Este usuario no tiene perfil en la colección 'usuarios'.");
-      return { email: cred.user.email, rol: doc.data().rol, uid: cred.user.uid };
+      const sesion = { usuario: doc.data().usuario || usuarioInput, rol: doc.data().rol, uid: cred.user.uid };
+      await Store.registrarAcceso(sesion.usuario, sesion.rol);
+      return sesion;
     };
     Store.logout = async function(){ await auth.signOut(); };
     Store.getSesionActual = function(){ return null; }; // se resuelve vía onAuthStateChanged
@@ -647,9 +714,20 @@ if(!DEMO_MODE){
         if(!user){ callback(null); return; }
         try{
           const doc = await db.collection("usuarios").doc(user.uid).get();
-          callback(doc.exists ? { email:user.email, rol:doc.data().rol, uid:user.uid } : null);
+          callback(doc.exists ? { usuario:doc.data().usuario || user.email.split("@")[0], rol:doc.data().rol, uid:user.uid } : null);
         }catch(e){ callback(null); }
       });
+    };
+    Store.registrarAcceso = async function(usuario, rol){
+      try{
+        await db.collection("registroAccesos").add({ usuario:usuario, rol:rol, fecha:new Date().toISOString() });
+      }catch(e){ console.error("No se pudo registrar el acceso.", e); }
+    };
+    Store.obtenerAccesos = async function(){
+      const snap = await db.collection("registroAccesos").orderBy("fecha","desc").limit(100).get();
+      const arr = [];
+      snap.forEach(function(d){ arr.push(d.data()); });
+      return arr;
     };
     Store.escucharEventos = function(callback){
       return db.collection("eventos").onSnapshot(function(snap){
@@ -660,7 +738,7 @@ if(!DEMO_MODE){
     };
     Store.crearEvento = async function(data, usuario){
       const ref = await db.collection("eventos").add(Object.assign({}, data, {
-        creadoPor: usuario.email,
+        creadoPor: usuario.usuario,
         fechaCreacion: new Date().toISOString(),
         archivado: false,
         historialCambios: []
@@ -681,7 +759,7 @@ if(!DEMO_MODE){
             campo: campo,
             valorAnterior: valorAnterior===undefined ? "" : valorAnterior,
             valorNuevo: valorNuevo===undefined ? "" : valorNuevo,
-            usuario: usuario.email,
+            usuario: usuario.usuario,
             fecha: new Date().toISOString()
           });
         }
@@ -765,7 +843,7 @@ function renderLoginExtras(){
   const aviso = document.getElementById("loginDemoAviso");
   if(DEMO_MODE){
     aviso.innerHTML = '<div class="aviso-msg">Modo demostración local: no hay Firebase configurado todavía. Los datos se guardan solo en este navegador. Cuando pegues tus credenciales en <code>CONFIG.firebase</code>, la app usará Firestore/Authentication real.</div>';
-    cont.innerHTML = '<b>Cuentas de prueba (modo demo):</b><br>admin@demo.com / admin123<br>editor@demo.com / editor123<br>lectura@demo.com / lectura123';
+    cont.innerHTML = '<b>Cuentas de prueba (modo demo):</b><br>admin / admin123<br>editor / editor123<br>lectura / lectura123';
   }else{
     aviso.innerHTML = "";
     cont.innerHTML = "";
@@ -774,12 +852,12 @@ function renderLoginExtras(){
 
 document.getElementById("formLogin").addEventListener("submit", async function(ev){
   ev.preventDefault();
-  const email = document.getElementById("loginEmail").value.trim();
+  const usuarioInput = document.getElementById("loginUsuario").value.trim();
   const pass = document.getElementById("loginPass").value;
   const errBox = document.getElementById("loginError");
   errBox.innerHTML = "";
   try{
-    const sesion = await Store.login(email, pass);
+    const sesion = await Store.login(usuarioInput, pass);
     if(DEMO_MODE) iniciarSesionUI(sesion);
     // en modo Firebase, onCambioAuth dispara iniciarSesionUI automáticamente
   }catch(e){
@@ -791,7 +869,7 @@ function iniciarSesionUI(usuario){
   estado.usuario = usuario;
   document.getElementById("pantallaLogin").style.display = "none";
   document.getElementById("appShell").classList.add("activo");
-  document.getElementById("cajaUsuarioCorreo").textContent = usuario.email;
+  document.getElementById("cajaUsuarioCorreo").textContent = usuario.usuario;
   document.getElementById("cajaUsuarioRol").textContent = usuario.rol;
   document.getElementById("bannerModo").textContent = DEMO_MODE ? "MODO DEMO (local)" : "Conectado a Firebase";
   document.getElementById("bannerModo").className = "banner-modo " + (DEMO_MODE ? "demo" : "firebase");
@@ -824,6 +902,39 @@ document.getElementById("btnLogout").addEventListener("click", async function(){
 });
 
 renderLoginExtras();
+
+/* ---------- Botón secreto: control de accesos ---------- */
+document.getElementById("btnAuditoriaSecreta").addEventListener("click", function(){
+  document.getElementById("auditoriaError").innerHTML = "";
+  document.getElementById("inputClaveAuditoria").value = "";
+  document.getElementById("auditoriaClaveVista").style.display = "block";
+  document.getElementById("auditoriaListaVista").style.display = "none";
+  document.getElementById("tituloModalAuditoria").textContent = "Control de accesos";
+  document.getElementById("fondoModalAuditoria").classList.add("activo");
+});
+document.getElementById("btnCerrarModalAuditoria").addEventListener("click", function(){
+  document.getElementById("fondoModalAuditoria").classList.remove("activo");
+});
+document.getElementById("btnVerAuditoria").addEventListener("click", async function(){
+  const clave = document.getElementById("inputClaveAuditoria").value;
+  const errBox = document.getElementById("auditoriaError");
+  if(clave !== CONFIG.claveAuditoria){
+    errBox.innerHTML = '<div class="error-msg">Clave incorrecta.</div>';
+    return;
+  }
+  errBox.innerHTML = "";
+  const accesos = await Store.obtenerAccesos();
+  const lista = document.getElementById("listaAccesos");
+  lista.innerHTML = accesos.length ? accesos.map(function(a){
+    return '<div class="acceso-fila">'
+      + '<div><div class="quien">'+escapeHTML(a.usuario)+'</div><div class="rol">'+escapeHTML(a.rol)+'</div></div>'
+      + '<div class="cuando">'+new Date(a.fecha).toLocaleString("es-VE")+'</div>'
+      + '</div>';
+  }).join("") : '<div class="vacio">Todavía no hay accesos registrados.</div>';
+  document.getElementById("tituloModalAuditoria").textContent = "Últimos accesos";
+  document.getElementById("auditoriaClaveVista").style.display = "none";
+  document.getElementById("auditoriaListaVista").style.display = "block";
+});
 
 if(!DEMO_MODE && Store.onCambioAuth){
   Store.onCambioAuth(function(usuario){
