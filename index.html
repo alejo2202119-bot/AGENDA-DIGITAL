@@ -229,7 +229,18 @@
   .badge-prioridad-baja{background:#eef4ea;color:#3c7a2e;}
   .badge-reservado{background:var(--azul-950);color:var(--oro);}
   .badge-choque{background:var(--rojo);color:#fff;}
+  .badge-delegado{background:#eef2fb;color:var(--azul-700);}
+  .badge-no-cubierto{background:#fdecea;color:var(--rojo);}
   .vacio{color:var(--gris-500);font-size:.88rem;padding:20px;text-align:center;}
+
+  .banner-responsable-dia{
+    background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);
+    padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    font-size:.85rem;
+  }
+  .banner-responsable-dia .etiqueta{color:var(--gris-500);font-size:.75rem;text-transform:uppercase;font-weight:700;}
+  .banner-responsable-dia input{flex:1;min-width:160px;border:1px solid var(--gris-300);border-radius:6px;padding:6px 10px;font-size:.85rem;}
+  .banner-responsable-dia button{font-size:.75rem;padding:6px 12px;}
 
   .cabecera-vista{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
   .acciones-vista{display:flex;gap:8px;flex-wrap:wrap;}
@@ -478,6 +489,7 @@
         </div>
       </div>
       <div id="alertaChoqueDiaria"></div>
+      <div class="banner-responsable-dia" id="bannerResponsableDia"></div>
       <div class="lista-eventos" id="listaEventosDiaria"></div>
     </div>
 
@@ -538,7 +550,21 @@
           </div>
           <div class="fila-2">
             <div class="campo"><label for="evLugar">Lugar</label><input type="text" id="evLugar"></div>
-            <div class="campo"><label for="evResponsable">Responsable</label><input type="text" id="evResponsable"></div>
+            <div class="campo"><label for="evResponsable">Responsable de organizarlo</label><input type="text" id="evResponsable"></div>
+          </div>
+          <div class="fila-2">
+            <div class="campo">
+              <label for="evAsistenciaJefe">¿Quién asiste?</label>
+              <select id="evAsistenciaJefe">
+                <option value="titular">El Jefe asiste en persona</option>
+                <option value="delegado">Asiste un delegado (no el Jefe)</option>
+                <option value="no_cubierto">Todavía sin cobertura</option>
+              </select>
+            </div>
+            <div class="campo" id="campoDelegadoNombre" style="display:none;">
+              <label for="evDelegadoNombre">Nombre del delegado</label>
+              <input type="text" id="evDelegadoNombre" placeholder="Quién va en representación">
+            </div>
           </div>
           <div class="fila-2">
             <div class="campo"><label for="evTipo">Tipo</label><select id="evTipo"></select></div>
@@ -715,6 +741,11 @@ const CONFIDENCIALIDADES = [
   { v:"interno", l:"Interno" },
   { v:"reservado", l:"Reservado" }
 ];
+const ASISTENCIA_JEFE = [
+  { v:"titular", l:"El Jefe asiste en persona" },
+  { v:"delegado", l:"Asiste un delegado" },
+  { v:"no_cubierto", l:"Sin cobertura" }
+];
 const PLANTILLAS_CHECKLIST = {
   acto_publico: ["Himno","Presídium","Discurso","Cobertura de medios","Seguridad"],
   firma_convenio: ["Documento revisado","Logotipos correctos","Firmantes confirmados"],
@@ -767,6 +798,7 @@ const LS_USUARIOS = "agenda_demo_usuarios";
 const LS_EVENTOS = "agenda_demo_eventos";
 const LS_SESION = "agenda_demo_sesion";
 const LS_ACCESOS = "agenda_demo_accesos";
+const LS_RESPONSABLES_DIA = "agenda_demo_responsables_dia";
 
 function demoSeed(){
   if(!localStorage.getItem(LS_USUARIOS)){
@@ -881,6 +913,15 @@ if(DEMO_MODE){
     const idx = usuarios.findIndex(function(u){ return u.usuario===uid; });
     if(idx>-1){ usuarios[idx].rol = nuevoRol; localStorage.setItem(LS_USUARIOS, JSON.stringify(usuarios)); }
   };
+  Store.obtenerResponsableDia = async function(fecha){
+    const datos = JSON.parse(localStorage.getItem(LS_RESPONSABLES_DIA) || "{}");
+    return datos[fecha] || "";
+  };
+  Store.guardarResponsableDia = async function(fecha, nombre){
+    const datos = JSON.parse(localStorage.getItem(LS_RESPONSABLES_DIA) || "{}");
+    datos[fecha] = nombre;
+    localStorage.setItem(LS_RESPONSABLES_DIA, JSON.stringify(datos));
+  };
 }
 
 /* ---------- Implementación FIREBASE ---------- */
@@ -964,6 +1005,18 @@ if(!DEMO_MODE){
     };
     Store.actualizarRolUsuario = async function(uid, nuevoRol){
       await db.collection("usuarios").doc(uid).update({ rol:nuevoRol });
+    };
+    Store.obtenerResponsableDia = async function(fecha){
+      try{
+        const doc = await db.collection("responsablesDia").doc(fecha).get();
+        return doc.exists ? (doc.data().nombre || "") : "";
+      }catch(e){
+        console.error("No se pudo leer el responsable del día.", e);
+        return "";
+      }
+    };
+    Store.guardarResponsableDia = async function(fecha, nombre){
+      await db.collection("responsablesDia").doc(fecha).set({ nombre: nombre });
     };
     Store.crearUsuario = async function(datos){
       /* Se usa una instancia secundaria de Firebase solo para crear la
@@ -1360,6 +1413,34 @@ function moverDia(delta){
 document.getElementById("btnNuevoEventoDiaria").addEventListener("click", function(){ abrirModalEvento(null); });
 document.getElementById("btnNuevoEventoLista").addEventListener("click", function(){ abrirModalEvento(null); });
 
+async function renderResponsableDiaBanner(){
+  const cont = document.getElementById("bannerResponsableDia");
+  const fecha = estado.fechaDiaria;
+  let nombre = "";
+  try{ nombre = await Store.obtenerResponsableDia(fecha); }catch(e){ nombre = ""; }
+  if(estado.fechaDiaria !== fecha) return; // el usuario ya cambió de día mientras cargaba
+
+  if(esVistaLectura()){
+    cont.innerHTML = '<span class="etiqueta">Si no puedo asistir, responde por mí:</span> <b>'+(nombre?escapeHTML(nombre):"— sin asignar —")+'</b>';
+    return;
+  }
+  cont.innerHTML = '<span class="etiqueta">Responsable de hoy si el Jefe no puede asistir:</span>'
+    + '<input type="text" id="inputResponsableDia" value="'+escapeHTML(nombre)+'" placeholder="Ej: Secretario General">'
+    + '<button type="button" class="btn btn-secundario" id="btnGuardarResponsableDia">Guardar</button>'
+    + '<span id="avisoResponsableDia" style="font-size:.75rem;color:var(--verde);display:none;">Guardado ✓</span>';
+  document.getElementById("btnGuardarResponsableDia").addEventListener("click", async function(){
+    const valor = document.getElementById("inputResponsableDia").value.trim();
+    try{
+      await Store.guardarResponsableDia(fecha, valor);
+      const aviso = document.getElementById("avisoResponsableDia");
+      aviso.style.display = "inline";
+      setTimeout(function(){ aviso.style.display = "none"; }, 2000);
+    }catch(e){
+      alert("No se pudo guardar el responsable del día: " + (e.message||e));
+    }
+  });
+}
+
 function renderVistaDiaria(){
   const cont = document.getElementById("listaEventosDiaria");
   const alertaBox = document.getElementById("alertaChoqueDiaria");
@@ -1370,6 +1451,8 @@ function renderVistaDiaria(){
   alertaBox.innerHTML = choques.size>0
     ? '<div class="alerta-choque">⚠ Hay '+choques.size+' evento(s) con choque de horario en este día. Revísalos antes de confirmar la agenda.</div>'
     : "";
+
+  renderResponsableDiaBanner();
 
   if(dia.length===0){
     cont.innerHTML = '<div class="vacio">No hay eventos para este día.</div>';
@@ -1396,6 +1479,8 @@ function tarjetaEventoHTML(e, tieneChoque){
       + '<div class="te-cuerpo">'
         + '<div class="te-titulo">'+escapeHTML(e.titulo||"(sin título)")+'</div>'
         + '<div class="te-meta">'+escapeHTML(e.lugar||"Lugar por confirmar")+' · Con: '+escapeHTML(e.responsable||"—")+'</div>'
+        + (e.asistenciaJefe==="delegado" ? '<div class="te-meta"><b>Asiste en tu representación: '+escapeHTML(e.delegadoNombre||"(sin nombre)")+'</b></div>' : '')
+        + (e.asistenciaJefe==="no_cubierto" ? '<div class="te-meta"><b>⚠ Todavía sin cobertura</b></div>' : '')
         + (e.notas ? '<div class="te-meta">'+escapeHTML(e.notas)+'</div>' : '')
       + '</div></div>';
   }
@@ -1410,6 +1495,8 @@ function tarjetaEventoHTML(e, tieneChoque){
         + '<span class="badge badge-prioridad-'+(e.prioridad||"media")+'">'+etiqueta(PRIORIDADES,e.prioridad)+'</span>'
         + (e.nivelConfidencialidad==="reservado" ? '<span class="badge badge-reservado">Reservado</span>' : '')
         + (tieneChoque ? '<span class="badge badge-choque">Choque de horario</span>' : '')
+        + (e.asistenciaJefe==="delegado" ? '<span class="badge badge-delegado">👤 Delega: '+escapeHTML(e.delegadoNombre||"sin nombre")+'</span>' : '')
+        + (e.asistenciaJefe==="no_cubierto" ? '<span class="badge badge-no-cubierto">⚠ Sin cobertura</span>' : '')
       + '</div>'
     + '</div></div>';
 }
@@ -1477,6 +1564,10 @@ function renderVistaEventos(){
   CONFIDENCIALIDADES.forEach(function(t){ sConf.innerHTML += '<option value="'+t.v+'">'+t.l+'</option>'; });
 })();
 
+document.getElementById("evAsistenciaJefe").addEventListener("change", function(){
+  document.getElementById("campoDelegadoNombre").style.display = this.value==="delegado" ? "block" : "none";
+});
+
 document.querySelectorAll(".tab-btn").forEach(function(btn){
   btn.addEventListener("click", function(){
     const tab = btn.getAttribute("data-tab");
@@ -1516,6 +1607,9 @@ function abrirModalEvento(id){
     document.getElementById("evFin").value = evento ? datetimeLocalValor(evento.fechaFin) : "";
     document.getElementById("evLugar").value = evento ? evento.lugar||"" : "";
     document.getElementById("evResponsable").value = evento ? evento.responsable||"" : "";
+    document.getElementById("evAsistenciaJefe").value = evento ? evento.asistenciaJefe||"titular" : "titular";
+    document.getElementById("evDelegadoNombre").value = evento ? evento.delegadoNombre||"" : "";
+    document.getElementById("campoDelegadoNombre").style.display = document.getElementById("evAsistenciaJefe").value==="delegado" ? "block" : "none";
     document.getElementById("evTipo").value = evento ? evento.tipo||"otro" : "otro";
     document.getElementById("evArea").value = evento ? evento.area||"" : "";
     document.getElementById("evEstado").value = evento ? evento.estado||"borrador" : "borrador";
@@ -1561,6 +1655,8 @@ function leerCamposFormularioEvento(){
     fechaFin: document.getElementById("evFin").value,
     lugar: document.getElementById("evLugar").value,
     responsable: document.getElementById("evResponsable").value,
+    asistenciaJefe: document.getElementById("evAsistenciaJefe").value,
+    delegadoNombre: document.getElementById("evDelegadoNombre").value,
     tipo: document.getElementById("evTipo").value,
     area: document.getElementById("evArea").value,
     estado: document.getElementById("evEstado").value,
@@ -1575,6 +1671,9 @@ function aplicarCamposFormularioEvento(campos){
   document.getElementById("evFin").value = campos.fechaFin || "";
   document.getElementById("evLugar").value = campos.lugar || "";
   document.getElementById("evResponsable").value = campos.responsable || "";
+  document.getElementById("evAsistenciaJefe").value = campos.asistenciaJefe || "titular";
+  document.getElementById("evDelegadoNombre").value = campos.delegadoNombre || "";
+  document.getElementById("campoDelegadoNombre").style.display = (campos.asistenciaJefe==="delegado") ? "block" : "none";
   document.getElementById("evTipo").value = campos.tipo || "otro";
   document.getElementById("evArea").value = campos.area || "";
   document.getElementById("evEstado").value = campos.estado || "borrador";
@@ -1936,6 +2035,8 @@ document.getElementById("btnGuardarEvento").addEventListener("click", async func
     fechaFin: fin ? new Date(fin).toISOString() : "",
     lugar: document.getElementById("evLugar").value.trim(),
     responsable: document.getElementById("evResponsable").value.trim(),
+    asistenciaJefe: document.getElementById("evAsistenciaJefe").value,
+    delegadoNombre: document.getElementById("evAsistenciaJefe").value==="delegado" ? document.getElementById("evDelegadoNombre").value.trim() : "",
     tipo: document.getElementById("evTipo").value,
     area: document.getElementById("evArea").value.trim(),
     estado: document.getElementById("evEstado").value,
