@@ -491,6 +491,7 @@
     </div>
     <div class="modal-body">
       <div id="modalEventoError"></div>
+      <div id="avisoBorrador" style="display:none;"></div>
 
       <!-- Vista lectura (rol lectura) -->
       <div id="vistaLecturaEvento" class="vista-lectura-evento" style="display:none;"></div>
@@ -707,13 +708,14 @@ if(DEMO_MODE){
     const u = usuarios.find(x=>x.usuario.toLowerCase()===String(usuarioInput).toLowerCase() && x.password===password);
     if(!u) throw new Error("Usuario o contraseña incorrectos.");
     const sesion = { usuario:u.usuario, rol:u.rol };
-    localStorage.setItem(LS_SESION, JSON.stringify(sesion));
+    // sessionStorage (no localStorage): la sesión se borra sola al cerrar la pestaña/navegador.
+    sessionStorage.setItem(LS_SESION, JSON.stringify(sesion));
     await Store.registrarAcceso(sesion.usuario, sesion.rol);
     return sesion;
   };
-  Store.logout = async function(){ localStorage.removeItem(LS_SESION); };
+  Store.logout = async function(){ sessionStorage.removeItem(LS_SESION); };
   Store.getSesionActual = function(){
-    const s = localStorage.getItem(LS_SESION);
+    const s = sessionStorage.getItem(LS_SESION);
     return s ? JSON.parse(s) : null;
   };
   Store.escucharEventos = function(callback){
@@ -802,6 +804,9 @@ if(!DEMO_MODE){
     firebase.initializeApp(CONFIG.firebase);
     const auth = firebase.auth();
     const db = firebase.firestore();
+    // La sesión se borra sola al cerrar la pestaña/navegador (no queda
+    // abierta para la siguiente persona que use el equipo).
+    await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
 
     Store.login = async function(usuarioInput, password){
       const emailInterno = usuarioToEmailInterno(usuarioInput);
@@ -1413,6 +1418,7 @@ function abrirModalEvento(id){
     renderChecklist(evento ? (evento.checklistProtocolo||[]) : plantillaChecklist(document.getElementById("evTipo").value));
     renderHistorial(evento ? (evento.historialCambios||[]) : []);
     renderUbicacionTab();
+    revisarBorradorEvento();
 
     document.querySelectorAll(".tab-btn")[0].click();
   }
@@ -1425,6 +1431,84 @@ function cerrarModalEvento(){
   document.getElementById("fondoModalEvento").classList.remove("activo");
   estado.eventoEnEdicion = null;
 }
+
+/* ---------- Borrador automático (solo local, por usuario) ----------
+   Si alguien deja algo escrito sin guardar y la sesión se cierra (por
+   ejemplo al cerrar la pestaña), lo siguiente que abra el mismo usuario
+   recupera ese texto. Se guarda con una clave que incluye su identidad,
+   así que otro usuario que entre después no lo puede ver. */
+function identidadUsuarioActual(){
+  return estado.usuario ? (estado.usuario.uid || estado.usuario.usuario) : "anonimo";
+}
+function contextoModalEvento(){
+  return estado.eventoEnEdicion ? estado.eventoEnEdicion.id : "nuevo";
+}
+function claveBorradorEvento(contexto){
+  return "agenda_borrador_evento_" + identidadUsuarioActual() + "_" + (contexto || contextoModalEvento());
+}
+function leerCamposFormularioEvento(){
+  return {
+    titulo: document.getElementById("evTitulo").value,
+    fechaInicio: document.getElementById("evInicio").value,
+    fechaFin: document.getElementById("evFin").value,
+    lugar: document.getElementById("evLugar").value,
+    responsable: document.getElementById("evResponsable").value,
+    tipo: document.getElementById("evTipo").value,
+    area: document.getElementById("evArea").value,
+    estado: document.getElementById("evEstado").value,
+    prioridad: document.getElementById("evPrioridad").value,
+    nivelConfidencialidad: document.getElementById("evConfidencialidad").value,
+    notas: document.getElementById("evNotas").value
+  };
+}
+function aplicarCamposFormularioEvento(campos){
+  document.getElementById("evTitulo").value = campos.titulo || "";
+  document.getElementById("evInicio").value = campos.fechaInicio || "";
+  document.getElementById("evFin").value = campos.fechaFin || "";
+  document.getElementById("evLugar").value = campos.lugar || "";
+  document.getElementById("evResponsable").value = campos.responsable || "";
+  document.getElementById("evTipo").value = campos.tipo || "otro";
+  document.getElementById("evArea").value = campos.area || "";
+  document.getElementById("evEstado").value = campos.estado || "borrador";
+  document.getElementById("evPrioridad").value = campos.prioridad || "media";
+  document.getElementById("evConfidencialidad").value = campos.nivelConfidencialidad || "interno";
+  document.getElementById("evNotas").value = campos.notas || "";
+}
+let borradorEventoTimeout = null;
+function guardarBorradorEvento(){
+  if(!estado.usuario || esVistaLectura()) return;
+  clearTimeout(borradorEventoTimeout);
+  borradorEventoTimeout = setTimeout(function(){
+    localStorage.setItem(claveBorradorEvento(), JSON.stringify({
+      campos: leerCamposFormularioEvento(),
+      checklist: checklistTemp,
+      guardadoEn: new Date().toISOString()
+    }));
+  }, 400);
+}
+function borrarBorradorEvento(contexto){
+  localStorage.removeItem(claveBorradorEvento(contexto));
+}
+function revisarBorradorEvento(){
+  const contexto = contextoModalEvento();
+  const aviso = document.getElementById("avisoBorrador");
+  const guardado = localStorage.getItem(claveBorradorEvento(contexto));
+  if(!guardado){ aviso.style.display = "none"; return; }
+  let datos;
+  try{ datos = JSON.parse(guardado); }catch(e){ localStorage.removeItem(claveBorradorEvento(contexto)); aviso.style.display = "none"; return; }
+  aplicarCamposFormularioEvento(datos.campos || {});
+  renderChecklist(datos.checklist || []);
+  aviso.innerHTML = '<div class="aviso-msg">Se recuperó un borrador sin guardar de una sesión anterior ('
+    + new Date(datos.guardadoEn).toLocaleString("es-VE")
+    + '). <button type="button" class="btn btn-secundario" id="btnDescartarBorrador" style="padding:4px 10px;font-size:.75rem;margin-left:6px;">Descartar borrador</button></div>';
+  aviso.style.display = "block";
+  document.getElementById("btnDescartarBorrador").addEventListener("click", function(){
+    borrarBorradorEvento(contexto);
+    abrirModalEvento(estado.eventoEnEdicion ? estado.eventoEnEdicion.id : null);
+  });
+}
+document.getElementById("vistaOperativaEvento").addEventListener("input", guardarBorradorEvento);
+document.getElementById("vistaOperativaEvento").addEventListener("change", guardarBorradorEvento);
 
 /* ---------- checklist ---------- */
 let checklistTemp = [];
@@ -1656,6 +1740,7 @@ document.getElementById("btnGuardarEvento").addEventListener("click", async func
     }else{
       await Store.crearEvento(datos, estado.usuario);
     }
+    borrarBorradorEvento(contextoModalEvento());
     cerrarModalEvento();
     refrescarDemo();
   }catch(e){
