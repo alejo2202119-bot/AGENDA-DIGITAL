@@ -289,10 +289,13 @@
     height:220px;border-radius:8px;border:1px solid var(--gris-300);
     background:var(--azul-050);display:flex;align-items:center;justify-content:center;
     color:var(--gris-500);font-size:.82rem;text-align:center;padding:16px;
-    overflow:hidden;
+    overflow:hidden;transition:height .2s;
   }
   #mapaEventoBox.mapa-activo, #mapaBusquedaBox.mapa-activo{
     display:block;padding:0;
+  }
+  #mapaBusquedaBox.mapa-expandido{
+    height:520px;
   }
   .resultados-lugar-lista{
     position:absolute;left:0;right:0;top:100%;z-index:2000;
@@ -557,6 +560,9 @@
             <label>Buscar dirección</label>
             <input type="text" id="evBusquedaMapa" placeholder="Escribe una dirección en Táchira..." autocomplete="off">
             <div id="resultadosBusquedaMapa" class="resultados-lugar-lista"></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+            <button type="button" class="btn btn-secundario" id="btnExpandirMapa" style="font-size:.75rem;padding:5px 10px;">⛶ Expandir mapa</button>
           </div>
           <div id="mapaBusquedaBox"></div>
           <p style="font-size:.75rem;color:var(--gris-500);margin-top:8px;" id="ubicacionGuardadaTexto"></p>
@@ -1640,13 +1646,21 @@ function renderUbicacionTab(){
     texto.textContent = "Sin ubicación guardada todavía.";
   }
   const box = document.getElementById("mapaBusquedaBox");
-  box.classList.remove("mapa-activo");
+  box.classList.remove("mapa-activo", "mapa-expandido");
   box.textContent = "Cargando mapa...";
   document.getElementById("resultadosBusquedaMapa").innerHTML = "";
+  document.getElementById("btnExpandirMapa").textContent = "⛶ Expandir mapa";
   if(mapaInstancia){ mapaInstancia.remove(); }
   mapaInstancia = null;
   marcadorInstancia = null;
 }
+
+document.getElementById("btnExpandirMapa").addEventListener("click", function(){
+  const box = document.getElementById("mapaBusquedaBox");
+  const expandido = box.classList.toggle("mapa-expandido");
+  this.textContent = expandido ? "⛶ Reducir mapa" : "⛶ Expandir mapa";
+  setTimeout(function(){ if(mapaInstancia) mapaInstancia.invalidateSize(); }, 220);
+});
 
 function activarMapaUbicacion(){
   const box = document.getElementById("mapaBusquedaBox");
