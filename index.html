@@ -568,13 +568,16 @@ const DEMO_MODE = !CONFIG.firebase.apiKey;
 
 const TACHIRA_CENTRO = { lat: 7.7669, lng: -72.2250 };
 
-/* Firebase Authentication solo acepta correos. El login de la app usa
-   "usuario" (sin @), así que aquí lo convertimos a un correo interno
-   fijo que nunca se muestra ni se usa para enviar nada. */
+/* Firebase Authentication solo acepta correos. Si la cuenta se creó con un
+   correo real (contiene "@"), se usa tal cual. Si se creó solo con un
+   nombre de usuario (sin "@"), se convierte a un correo interno fijo que
+   nunca se muestra ni se usa para enviar nada. */
 function usuarioToEmailInterno(usuario){
-  const limpio = String(usuario||"")
+  const texto = String(usuario||"").trim();
+  if(texto.includes("@")) return texto.toLowerCase();
+  const limpio = texto
     .normalize("NFD").replace(/[̀-ͯ]/g,"") // quita acentos
-    .toLowerCase().trim().replace(/\s+/g,".").replace(/[^a-z0-9.]/g,"");
+    .toLowerCase().replace(/\s+/g,".").replace(/[^a-z0-9.]/g,"");
   return limpio + "@agenda-digital.local";
 }
 
