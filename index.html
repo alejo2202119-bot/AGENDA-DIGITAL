@@ -131,6 +131,10 @@
   .acceso-fila .quien{font-weight:600;color:var(--gris-900);}
   .acceso-fila .rol{font-size:.7rem;color:var(--gris-500);text-transform:uppercase;}
   .acceso-fila .cuando{font-size:.75rem;color:var(--gris-500);white-space:nowrap;}
+  .usuario-fila{background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;box-shadow:var(--sombra);}
+  .usuario-fila .nombre{font-weight:600;font-size:.92rem;}
+  .usuario-fila .uid{font-size:.7rem;color:var(--gris-500);word-break:break-all;}
+  .usuario-fila select{padding:6px 8px;border:1px solid var(--gris-300);border-radius:6px;font-size:.8rem;}
 
   /* ---------- Shell principal ---------- */
   #appShell{display:none;min-height:100vh;}
@@ -367,6 +371,43 @@
   </div>
 </div>
 
+<!-- =================== MODAL NUEVO USUARIO =================== -->
+<div class="fondo-modal" id="fondoModalUsuario">
+  <div class="caja-modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h3>Nuevo usuario</h3>
+      <button id="btnCerrarModalUsuario">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="modalUsuarioError"></div>
+      <div class="campo">
+        <label for="nuevoUsuarioNombre">Nombre para mostrar</label>
+        <input type="text" id="nuevoUsuarioNombre" placeholder="Ej: María Pérez">
+      </div>
+      <div class="campo">
+        <label for="nuevoUsuarioCorreo">Correo de acceso</label>
+        <input type="text" id="nuevoUsuarioCorreo" placeholder="lo que escribirá en 'Usuario' al entrar">
+      </div>
+      <div class="campo">
+        <label for="nuevoUsuarioPassword">Contraseña</label>
+        <input type="text" id="nuevoUsuarioPassword" placeholder="mínimo 6 caracteres">
+      </div>
+      <div class="campo">
+        <label for="nuevoUsuarioRol">Rol</label>
+        <select id="nuevoUsuarioRol">
+          <option value="admin">Admin</option>
+          <option value="editor">Editor</option>
+          <option value="lectura">Lectura</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secundario" id="btnCancelarModalUsuario">Cancelar</button>
+      <button class="btn btn-primario" id="btnGuardarUsuario">Crear usuario</button>
+    </div>
+  </div>
+</div>
+
 <!-- =================== APP =================== -->
 <div id="appShell">
   <aside class="barra-lateral" id="barraLateral">
@@ -378,6 +419,7 @@
     <div class="nav-item" data-vista="eventos">🗂️ Eventos</div>
     <div class="nav-item" data-vista="metricas">📊 Métricas</div>
     <div class="nav-item" data-vista="backup">⚙️ Config / Respaldo</div>
+    <div class="nav-item" data-vista="usuarios">👤 Usuarios</div>
     <div class="nav-sep"></div>
     <div class="caja-usuario">
       <div class="correo" id="cajaUsuarioCorreo">—</div>
@@ -429,6 +471,14 @@
     <div class="zona" id="zonaMetricas" style="display:none;"></div>
 
     <div class="zona" id="zonaBackup" style="display:none;"></div>
+
+    <div class="zona" id="zonaUsuarios" style="display:none;">
+      <div class="cabecera-vista">
+        <h3 style="margin:0;">Usuarios con acceso</h3>
+        <button class="btn btn-oro" id="btnNuevoUsuario">+ Nuevo usuario</button>
+      </div>
+      <div id="listaUsuarios"></div>
+    </div>
   </div>
 </div>
 
@@ -721,6 +771,24 @@ if(DEMO_MODE){
     const accesos = JSON.parse(localStorage.getItem(LS_ACCESOS) || "[]");
     return accesos.slice().reverse();
   };
+  Store.listarUsuarios = async function(){
+    const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
+    return usuarios.map(function(u){ return { uid:u.usuario, usuario:u.usuario, rol:u.rol }; });
+  };
+  Store.crearUsuario = async function(datos){
+    const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
+    if(usuarios.some(function(u){ return u.usuario.toLowerCase()===datos.correo.toLowerCase(); })){
+      throw new Error("Ya existe un usuario con ese correo.");
+    }
+    usuarios.push({ usuario:datos.correo, password:datos.password, rol:datos.rol });
+    localStorage.setItem(LS_USUARIOS, JSON.stringify(usuarios));
+    return datos.correo;
+  };
+  Store.actualizarRolUsuario = async function(uid, nuevoRol){
+    const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
+    const idx = usuarios.findIndex(function(u){ return u.usuario===uid; });
+    if(idx>-1){ usuarios[idx].rol = nuevoRol; localStorage.setItem(LS_USUARIOS, JSON.stringify(usuarios)); }
+  };
 }
 
 /* ---------- Implementación FIREBASE ---------- */
@@ -784,6 +852,43 @@ if(!DEMO_MODE){
       const arr = [];
       snap.forEach(function(d){ arr.push(d.data()); });
       return arr;
+    };
+    Store.listarUsuarios = async function(){
+      const snap = await db.collection("usuarios").get();
+      const arr = [];
+      snap.forEach(function(d){ arr.push(Object.assign({uid:d.id}, d.data())); });
+      return arr;
+    };
+    Store.actualizarRolUsuario = async function(uid, nuevoRol){
+      await db.collection("usuarios").doc(uid).update({ rol:nuevoRol });
+    };
+    Store.crearUsuario = async function(datos){
+      /* Se usa una instancia secundaria de Firebase solo para crear la
+         cuenta nueva, así el admin que está creando el usuario no pierde
+         su propia sesión (createUserWithEmailAndPassword inicia sesión
+         automáticamente con la cuenta recién creada en la instancia que
+         se use). */
+      let secApp;
+      try{
+        secApp = firebase.app("SecundariaCrearUsuarios");
+      }catch(e){
+        secApp = firebase.initializeApp(CONFIG.firebase, "SecundariaCrearUsuarios");
+      }
+      const secAuth = secApp.auth();
+      const emailInterno = usuarioToEmailInterno(datos.correo);
+      let cred;
+      try{
+        cred = await secAuth.createUserWithEmailAndPassword(emailInterno, datos.password);
+      }catch(e){
+        if(e.code === "auth/email-already-in-use") throw new Error("Ya existe una cuenta con ese correo/usuario.");
+        if(e.code === "auth/weak-password") throw new Error("La contraseña es muy débil (mínimo 6 caracteres).");
+        if(e.code === "auth/invalid-email") throw new Error("Ese correo/usuario no es válido.");
+        throw new Error("No se pudo crear la cuenta: " + (e.message || e.code));
+      }
+      const nuevoUid = cred.user.uid;
+      await secAuth.signOut();
+      await db.collection("usuarios").doc(nuevoUid).set({ usuario: datos.usuario, rol: datos.rol });
+      return nuevoUid;
     };
     Store.escucharEventos = function(callback){
       return db.collection("eventos").onSnapshot(function(snap){
@@ -941,10 +1046,10 @@ function iniciarSesionUI(usuario){
   document.getElementById("bannerModo").textContent = DEMO_MODE ? "MODO DEMO (local)" : "Conectado a Firebase";
   document.getElementById("bannerModo").className = "banner-modo " + (DEMO_MODE ? "demo" : "firebase");
 
-  // el rol 'lectura' no ve Eventos completos ni Backup con lógica interna
+  // el rol 'lectura' no ve Eventos completos ni Backup; "Usuarios" es solo para admin
   document.querySelectorAll(".nav-item[data-vista]").forEach(function(el){
     const v = el.getAttribute("data-vista");
-    if(esVistaLectura() && (v==="backup")){
+    if((esVistaLectura() && v==="backup") || (usuario.rol!=="admin" && v==="usuarios")){
       el.style.display = "none";
     }else{
       el.style.display = "flex";
@@ -1003,6 +1108,66 @@ document.getElementById("btnVerAuditoria").addEventListener("click", async funct
   document.getElementById("auditoriaListaVista").style.display = "block";
 });
 
+/* ---------- Gestión de usuarios (solo admin) ---------- */
+function abrirModalUsuario(){
+  document.getElementById("modalUsuarioError").innerHTML = "";
+  document.getElementById("nuevoUsuarioNombre").value = "";
+  document.getElementById("nuevoUsuarioCorreo").value = "";
+  document.getElementById("nuevoUsuarioPassword").value = "";
+  document.getElementById("nuevoUsuarioRol").value = "editor";
+  document.getElementById("fondoModalUsuario").classList.add("activo");
+}
+document.getElementById("btnNuevoUsuario").addEventListener("click", abrirModalUsuario);
+document.getElementById("btnCerrarModalUsuario").addEventListener("click", function(){
+  document.getElementById("fondoModalUsuario").classList.remove("activo");
+});
+document.getElementById("btnCancelarModalUsuario").addEventListener("click", function(){
+  document.getElementById("fondoModalUsuario").classList.remove("activo");
+});
+document.getElementById("btnGuardarUsuario").addEventListener("click", async function(){
+  const errBox = document.getElementById("modalUsuarioError");
+  const nombre = document.getElementById("nuevoUsuarioNombre").value.trim();
+  const correo = document.getElementById("nuevoUsuarioCorreo").value.trim();
+  const password = document.getElementById("nuevoUsuarioPassword").value;
+  const rol = document.getElementById("nuevoUsuarioRol").value;
+  errBox.innerHTML = "";
+  if(!nombre || !correo){ errBox.innerHTML = '<div class="error-msg">Nombre y correo/usuario son obligatorios.</div>'; return; }
+  if(!password || password.length < 6){ errBox.innerHTML = '<div class="error-msg">La contraseña debe tener al menos 6 caracteres.</div>'; return; }
+  try{
+    await Store.crearUsuario({ usuario:nombre, correo:correo, password:password, rol:rol });
+    document.getElementById("fondoModalUsuario").classList.remove("activo");
+    renderVistaUsuarios();
+  }catch(e){
+    errBox.innerHTML = '<div class="error-msg">'+(e.message||"No se pudo crear el usuario.")+'</div>';
+  }
+});
+
+async function renderVistaUsuarios(){
+  const cont = document.getElementById("listaUsuarios");
+  cont.innerHTML = '<div class="vacio">Cargando...</div>';
+  let usuarios;
+  try{
+    usuarios = await Store.listarUsuarios();
+  }catch(e){
+    cont.innerHTML = '<div class="error-msg">No se pudo cargar la lista de usuarios.</div>';
+    return;
+  }
+  if(!usuarios.length){ cont.innerHTML = '<div class="vacio">No hay usuarios registrados.</div>'; return; }
+  cont.innerHTML = usuarios.map(function(u){
+    return '<div class="usuario-fila">'
+      + '<div><div class="nombre">'+escapeHTML(u.usuario)+'</div><div class="uid">'+escapeHTML(u.uid)+'</div></div>'
+      + '<select data-uid="'+escapeHTML(u.uid)+'">'
+        + ['admin','editor','lectura'].map(function(r){ return '<option value="'+r+'" '+(u.rol===r?"selected":"")+'>'+r+'</option>'; }).join("")
+      + '</select>'
+      + '</div>';
+  }).join("");
+  cont.querySelectorAll("select").forEach(function(sel){
+    sel.addEventListener("change", async function(){
+      await Store.actualizarRolUsuario(sel.getAttribute("data-uid"), sel.value);
+    });
+  });
+}
+
 if(!DEMO_MODE && Store.onCambioAuth){
   Store.onCambioAuth(function(usuario){
     if(usuario) iniciarSesionUI(usuario);
@@ -1043,7 +1208,8 @@ function cambiarVista(v){
   document.getElementById("zonaEventos").style.display = v==="eventos" ? "block" : "none";
   document.getElementById("zonaMetricas").style.display = v==="metricas" ? "block" : "none";
   document.getElementById("zonaBackup").style.display = v==="backup" ? "block" : "none";
-  const titulos = { diaria:"Vista diaria", eventos:"Eventos", metricas:"Métricas", backup:"Configuración / Respaldo" };
+  document.getElementById("zonaUsuarios").style.display = v==="usuarios" ? "block" : "none";
+  const titulos = { diaria:"Vista diaria", eventos:"Eventos", metricas:"Métricas", backup:"Configuración / Respaldo", usuarios:"Usuarios" };
   document.getElementById("tituloVista").textContent = titulos[v];
   document.getElementById("barraLateral").classList.remove("abierta");
   renderVistaActual();
@@ -1057,6 +1223,7 @@ function renderVistaActual(){
   else if(estado.vistaActual==="eventos") renderVistaEventos();
   else if(estado.vistaActual==="metricas") renderVistaMetricas();
   else if(estado.vistaActual==="backup") renderVistaBackup();
+  else if(estado.vistaActual==="usuarios") renderVistaUsuarios();
 }
 
 /* =====================================================================
