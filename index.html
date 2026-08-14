@@ -1692,7 +1692,12 @@ document.getElementById("evBusquedaMapa").addEventListener("input", function(){
   busquedaLugarTimeout = setTimeout(function(){
     const bbox = TACHIRA_BOUNDS.west+","+TACHIRA_BOUNDS.south+","+TACHIRA_BOUNDS.east+","+TACHIRA_BOUNDS.north;
     const url = "https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=ve&viewbox="+bbox+"&bounded=1&q="+encodeURIComponent(texto);
-    fetch(url).then(function(r){ return r.json(); }).then(function(resultados){
+    lista.innerHTML = '<div class="vacio" style="padding:8px;">Buscando...</div>';
+    fetch(url).then(function(r){
+      if(r.status === 429) throw new Error("limite");
+      if(!r.ok) throw new Error("error_http");
+      return r.json();
+    }).then(function(resultados){
       if(!resultados.length){ lista.innerHTML = '<div class="vacio" style="padding:8px;">Sin resultados.</div>'; return; }
       lista.innerHTML = resultados.map(function(r, idx){
         return '<div class="resultado-lugar" data-idx="'+idx+'">'+escapeHTML(r.display_name)+'</div>';
@@ -1713,8 +1718,10 @@ document.getElementById("evBusquedaMapa").addEventListener("input", function(){
           lista.innerHTML = "";
         });
       });
-    }).catch(function(){
-      lista.innerHTML = '<div class="error-msg">No se pudo buscar (problema de conexión).</div>';
+    }).catch(function(err){
+      lista.innerHTML = err && err.message==="limite"
+        ? '<div class="error-msg">El buscador de direcciones (gratuito) está saturado en este momento. Espera unos segundos e intenta de nuevo, o simplemente haz clic directo en el punto exacto del mapa — funciona igual sin necesidad de buscar.</div>'
+        : '<div class="error-msg">No se pudo buscar (problema de conexión). Puedes hacer clic directo en el mapa en vez de buscar.</div>';
     });
   }, 600);
 });
