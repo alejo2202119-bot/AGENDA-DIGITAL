@@ -804,9 +804,17 @@ if(!DEMO_MODE){
     firebase.initializeApp(CONFIG.firebase);
     const auth = firebase.auth();
     const db = firebase.firestore();
-    // La sesión se borra sola al cerrar la pestaña/navegador (no queda
-    // abierta para la siguiente persona que use el equipo).
-    await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
+
+    // La sesión se borra sola al cerrar la pestaña/navegador: en vez de
+    // usar el modo "SESSION" de Firebase (que falla en algunos visores
+    // de preview), se marca con una bandera en sessionStorage si esta
+    // pestaña ya estaba activa; si no, se fuerza el cierre de sesión
+    // heredada antes de mostrar nada.
+    const BANDERA_PESTAÑA_ACTIVA = "agenda_pestana_activa";
+    if(!sessionStorage.getItem(BANDERA_PESTAÑA_ACTIVA)){
+      try{ await auth.signOut(); }catch(e){ /* no había sesión previa, no pasa nada */ }
+    }
+    sessionStorage.setItem(BANDERA_PESTAÑA_ACTIVA, "1");
 
     Store.login = async function(usuarioInput, password){
       const emailInterno = usuarioToEmailInterno(usuarioInput);
