@@ -1108,7 +1108,13 @@ document.getElementById("btnVerAuditoria").addEventListener("click", async funct
     return;
   }
   errBox.innerHTML = "";
-  const accesos = await Store.obtenerAccesos();
+  let accesos;
+  try{
+    accesos = await Store.obtenerAccesos();
+  }catch(e){
+    errBox.innerHTML = '<div class="error-msg">No se pudo cargar el registro (falta permiso en Firestore para leer "registroAccesos" sin haber iniciado sesión). Revisa las reglas de seguridad.</div>';
+    return;
+  }
   const lista = document.getElementById("listaAccesos");
   lista.innerHTML = accesos.length ? accesos.map(function(a){
     return '<div class="acceso-fila">'
