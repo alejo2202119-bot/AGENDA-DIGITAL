@@ -485,14 +485,14 @@
    ===================================================================== */
 const CONFIG = {
   firebase: {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyCQBbWjVL2UM1SFJ0VflNFBzoOwDRwZ2a0",
+    authDomain: "agenda-digital-4ea14.firebaseapp.com",
+    projectId: "agenda-digital-4ea14",
+    storageBucket: "agenda-digital-4ea14.firebasestorage.app",
+    messagingSenderId: "51270179347",
+    appId: "1:51270179347:web:fbdd39bcb0a0554ea0bde6"
   },
-  googleMapsApiKey: "" // se usa en el Paso 4 (mapa de Táchira)
+  googleMapsApiKey: "AIzaSyAMlSZi1OOTJ1ytJLW59frHrPy-XhIuYh4" // se usa en el Paso 4 (mapa de Táchira)
 };
 
 const DEMO_MODE = !CONFIG.firebase.apiKey;
@@ -1025,6 +1025,7 @@ document.querySelectorAll(".tab-btn").forEach(function(btn){
     estado.tabModalActiva = tab;
     document.querySelectorAll(".tab-btn").forEach(function(b){ b.classList.toggle("activo", b===btn); });
     document.querySelectorAll(".tab-panel").forEach(function(p){ p.classList.toggle("activo", p.getAttribute("data-panel")===tab); });
+    if(tab==="ubicacion") activarMapaUbicacion();
   });
 });
 
@@ -1141,24 +1142,132 @@ function renderHistorial(hist){
   }).join("");
 }
 
-/* ---------- ubicación / mapa (Paso 4 — se activa con googleMapsApiKey) ---------- */
+/* ---------- ubicación / mapa (Google Maps + Places Autocomplete, Táchira) ---------- */
+const TACHIRA_BOUNDS = { south:7.15, west:-72.65, north:8.45, east:-71.35 };
+const estadoMapas = { cargando:false, cargado:false, error:null, colaResolve:[], colaReject:[] };
+let mapaInstancia = null, marcadorInstancia = null, autocompleteInstancia = null;
+
+function cargarGoogleMapsAPI(){
+  return new Promise(function(resolve, reject){
+    if(!CONFIG.googleMapsApiKey){ reject(new Error("sin_key")); return; }
+    if(window.google && window.google.maps){ resolve(); return; }
+    if(estadoMapas.error){ reject(estadoMapas.error); return; }
+    estadoMapas.colaResolve.push(resolve);
+    estadoMapas.colaReject.push(reject);
+    if(estadoMapas.cargando) return;
+    estadoMapas.cargando = true;
+
+    window.__agendaMapsListo = function(){
+      estadoMapas.cargando = false;
+      estadoMapas.cargado = true;
+      estadoMapas.colaResolve.forEach(function(r){ r(); });
+      estadoMapas.colaResolve = []; estadoMapas.colaReject = [];
+    };
+    window.gm_authFailure = function(){
+      const err = new Error("limite_o_auth");
+      estadoMapas.cargando = false;
+      estadoMapas.error = err;
+      estadoMapas.colaReject.forEach(function(r){ r(err); });
+      estadoMapas.colaResolve = []; estadoMapas.colaReject = [];
+    };
+    const script = document.createElement("script");
+    script.src = "https://maps.googleapis.com/maps/api/js?key="+encodeURIComponent(CONFIG.googleMapsApiKey)+"&libraries=places&callback=__agendaMapsListo";
+    script.onerror = function(){
+      const err = new Error("carga_fallida");
+      estadoMapas.cargando = false;
+      estadoMapas.error = err;
+      estadoMapas.colaReject.forEach(function(r){ r(err); });
+      estadoMapas.colaResolve = []; estadoMapas.colaReject = [];
+    };
+    document.head.appendChild(script);
+  });
+}
+
 function renderUbicacionTab(){
   const texto = document.getElementById("ubicacionGuardadaTexto");
-  const box = document.getElementById("mapaBusquedaBox");
   if(estado.ubicacionSeleccionada){
     texto.textContent = "Ubicación guardada: " + (estado.ubicacionSeleccionada.direccion||"") +
-      " (" + estado.ubicacionSeleccionada.lat.toFixed(5) + ", " + estado.ubicacionSeleccionada.lng.toFixed(5) + ")";
+      " (" + Number(estado.ubicacionSeleccionada.lat).toFixed(5) + ", " + Number(estado.ubicacionSeleccionada.lng).toFixed(5) + ")";
   }else{
     texto.textContent = "Sin ubicación guardada todavía.";
   }
+  const box = document.getElementById("mapaBusquedaBox");
   if(!CONFIG.googleMapsApiKey){
-    box.innerHTML = "Agrega tu clave de Google Maps en <code>CONFIG.googleMapsApiKey</code> para activar la búsqueda de direcciones y el mapa de Táchira (Paso 4).";
+    box.innerHTML = "Agrega tu clave de Google Maps en <code>CONFIG.googleMapsApiKey</code> para activar la búsqueda de direcciones y el mapa de Táchira.";
   }else{
-    box.innerHTML = "Mapa disponible: la carga real del mapa de Google se activa según la clave configurada.";
-    // Punto de integración real del Paso 4: cargar Maps JS API + Places Autocomplete
-    // sobre #mapaBusquedaBox usando CONFIG.googleMapsApiKey y centrar en TACHIRA_CENTRO,
-    // y al confirmar un lugar, guardar { lat, lng } en estado.ubicacionSeleccionada.
+    box.textContent = "Cargando mapa...";
   }
+}
+
+function activarMapaUbicacion(){
+  const box = document.getElementById("mapaBusquedaBox");
+  if(!CONFIG.googleMapsApiKey){
+    box.innerHTML = "Agrega tu clave de Google Maps en <code>CONFIG.googleMapsApiKey</code> para activar la búsqueda de direcciones y el mapa de Táchira.";
+    return;
+  }
+  box.textContent = "Cargando mapa...";
+  cargarGoogleMapsAPI().then(function(){
+    box.innerHTML = "";
+    const centro = estado.ubicacionSeleccionada
+      ? { lat:Number(estado.ubicacionSeleccionada.lat), lng:Number(estado.ubicacionSeleccionada.lng) }
+      : TACHIRA_CENTRO;
+
+    mapaInstancia = new google.maps.Map(box, {
+      center: centro,
+      zoom: estado.ubicacionSeleccionada ? 15 : 9
+    });
+    marcadorInstancia = new google.maps.Marker({
+      map: mapaInstancia,
+      position: centro,
+      draggable: true,
+      visible: !!estado.ubicacionSeleccionada
+    });
+    marcadorInstancia.addListener("dragend", function(){
+      const pos = marcadorInstancia.getPosition();
+      guardarUbicacionSeleccionada(pos.lat(), pos.lng(), estado.ubicacionSeleccionada ? estado.ubicacionSeleccionada.direccion : "Ubicación en el mapa");
+    });
+    mapaInstancia.addListener("click", function(ev){
+      marcadorInstancia.setPosition(ev.latLng);
+      marcadorInstancia.setVisible(true);
+      guardarUbicacionSeleccionada(ev.latLng.lat(), ev.latLng.lng(), "Ubicación en el mapa");
+    });
+
+    const inputBusqueda = document.getElementById("evBusquedaMapa");
+    const bounds = new google.maps.LatLngBounds(
+      { lat:TACHIRA_BOUNDS.south, lng:TACHIRA_BOUNDS.west },
+      { lat:TACHIRA_BOUNDS.north, lng:TACHIRA_BOUNDS.east }
+    );
+    autocompleteInstancia = new google.maps.places.Autocomplete(inputBusqueda, {
+      bounds: bounds,
+      strictBounds: false,
+      componentRestrictions: { country: "ve" }
+    });
+    autocompleteInstancia.addListener("place_changed", function(){
+      const lugar = autocompleteInstancia.getPlace();
+      if(!lugar || !lugar.geometry){ return; }
+      const lat = lugar.geometry.location.lat();
+      const lng = lugar.geometry.location.lng();
+      mapaInstancia.setCenter({ lat:lat, lng:lng });
+      mapaInstancia.setZoom(15);
+      marcadorInstancia.setPosition({ lat:lat, lng:lng });
+      marcadorInstancia.setVisible(true);
+      guardarUbicacionSeleccionada(lat, lng, lugar.formatted_address || lugar.name || inputBusqueda.value);
+      if(!document.getElementById("evLugar").value.trim()){
+        document.getElementById("evLugar").value = lugar.formatted_address || lugar.name || "";
+      }
+    });
+  }).catch(function(err){
+    const mensaje = err && err.message==="limite_o_auth"
+      ? "No se pudo cargar el mapa: probablemente se alcanzó el límite diario de la clave de demostración de Google Maps. Puedes seguir escribiendo el lugar manualmente en el campo 'Lugar'; el mapa volverá a estar disponible cuando se reinicie el límite (usualmente al día siguiente)."
+      : "No se pudo cargar el mapa (problema de conexión). Puedes seguir escribiendo el lugar manualmente en el campo 'Lugar'.";
+    box.innerHTML = mensaje;
+  });
+}
+
+function guardarUbicacionSeleccionada(lat, lng, direccion){
+  estado.ubicacionSeleccionada = { lat:lat, lng:lng, direccion:direccion };
+  document.getElementById("ubicacionGuardadaTexto").textContent =
+    "Ubicación guardada: " + direccion + " (" + lat.toFixed(5) + ", " + lng.toFixed(5) + ")";
 }
 
 /* ---------- guardar / archivar ---------- */
