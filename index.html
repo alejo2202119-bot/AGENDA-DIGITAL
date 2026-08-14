@@ -1,0 +1,1333 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agenda Digital — Despacho del Gobernador</title>
+
+<!-- Firebase (v8 compat, sin build). Se activa solo cuando CONFIG.firebase.apiKey tenga valor. -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<!-- jsPDF para exportar la Carpeta del Día -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  :root{
+    --azul-950:#0b1f3a;
+    --azul-900:#122a4d;
+    --azul-800:#1c3a63;
+    --azul-700:#2a4f80;
+    --azul-100:#e7edf6;
+    --azul-050:#f4f7fb;
+    --oro:#c8a24a;
+    --verde:#2e9e5b;
+    --amarillo:#d3a012;
+    --rojo:#c0392b;
+    --gris-100:#f1f2f4;
+    --gris-300:#d7dbe0;
+    --gris-500:#8b93a1;
+    --gris-700:#4b5563;
+    --gris-900:#1f2937;
+    --blanco:#ffffff;
+    --radio:10px;
+    --sombra:0 2px 10px rgba(11,31,58,.08);
+    font-size:15px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--gris-100);
+    color:var(--gris-900);
+  }
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;}
+  a{color:inherit;}
+
+  /* ---------- Login ---------- */
+  #pantallaLogin{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:linear-gradient(160deg,var(--azul-950),var(--azul-800));
+    padding:20px;
+  }
+  .caja-login{
+    background:var(--blanco);
+    width:100%;
+    max-width:400px;
+    border-radius:var(--radio);
+    padding:36px 32px;
+    box-shadow:0 12px 40px rgba(0,0,0,.35);
+  }
+  .caja-login h1{
+    font-size:1.3rem;
+    margin:0 0 4px;
+    color:var(--azul-950);
+  }
+  .caja-login p.sub{
+    margin:0 0 24px;
+    color:var(--gris-500);
+    font-size:.9rem;
+  }
+  .campo{margin-bottom:16px;}
+  .campo label{
+    display:block;
+    font-size:.8rem;
+    font-weight:600;
+    margin-bottom:6px;
+    color:var(--gris-700);
+  }
+  .campo input, .campo select, .campo textarea{
+    width:100%;
+    padding:10px 12px;
+    border:1px solid var(--gris-300);
+    border-radius:8px;
+    font-size:.95rem;
+    background:var(--blanco);
+  }
+  .campo input:focus, .campo select:focus, .campo textarea:focus{
+    outline:2px solid var(--azul-700);
+    outline-offset:1px;
+  }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    border:none;
+    border-radius:8px;
+    padding:10px 18px;
+    font-size:.9rem;
+    font-weight:600;
+    transition:filter .15s;
+  }
+  .btn:hover{filter:brightness(1.08);}
+  .btn-primario{background:var(--azul-900);color:#fff;}
+  .btn-oro{background:var(--oro);color:var(--azul-950);}
+  .btn-secundario{background:var(--gris-100);color:var(--gris-900);border:1px solid var(--gris-300);}
+  .btn-peligro{background:#fdecea;color:var(--rojo);border:1px solid #f3c3bc;}
+  .btn-bloque{width:100%;}
+  .error-msg{
+    background:#fdecea;color:var(--rojo);border:1px solid #f3c3bc;
+    padding:10px 12px;border-radius:8px;font-size:.85rem;margin-bottom:14px;
+  }
+  .aviso-msg{
+    background:#fff8e6;color:#8a6100;border:1px solid #f0dca0;
+    padding:10px 12px;border-radius:8px;font-size:.82rem;margin-bottom:14px;
+  }
+  .demo-cuentas{
+    margin-top:18px;padding-top:16px;border-top:1px dashed var(--gris-300);
+    font-size:.78rem;color:var(--gris-500);line-height:1.6;
+  }
+  .demo-cuentas b{color:var(--gris-700);}
+
+  /* ---------- Shell principal ---------- */
+  #appShell{display:none;min-height:100vh;}
+  #appShell.activo{display:flex;}
+
+  .barra-lateral{
+    width:230px;
+    flex-shrink:0;
+    background:var(--azul-950);
+    color:#dfe6f2;
+    display:flex;
+    flex-direction:column;
+    padding:20px 0;
+  }
+  .marca{
+    padding:0 20px 20px;
+    border-bottom:1px solid rgba(255,255,255,.1);
+    margin-bottom:14px;
+  }
+  .marca .titulo{font-weight:700;font-size:1.02rem;color:#fff;}
+  .marca .subtitulo{font-size:.72rem;color:var(--oro);letter-spacing:.04em;}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;
+    padding:11px 20px;
+    font-size:.88rem;
+    color:#c7d2e6;
+    border-left:3px solid transparent;
+  }
+  .nav-item:hover{background:rgba(255,255,255,.05);color:#fff;cursor:pointer;}
+  .nav-item.activo{
+    background:rgba(255,255,255,.08);
+    border-left-color:var(--oro);
+    color:#fff;
+    font-weight:600;
+  }
+  .nav-sep{flex:1;}
+  .caja-usuario{
+    padding:14px 20px;border-top:1px solid rgba(255,255,255,.1);font-size:.78rem;
+  }
+  .caja-usuario .correo{color:#fff;font-weight:600;word-break:break-all;}
+  .caja-usuario .rol-pill{
+    display:inline-block;margin-top:6px;padding:2px 8px;border-radius:20px;
+    background:var(--oro);color:var(--azul-950);font-size:.68rem;font-weight:700;text-transform:uppercase;
+  }
+  .caja-usuario button{margin-top:10px;font-size:.75rem;}
+
+  .contenido{flex:1;min-width:0;display:flex;flex-direction:column;}
+  .topbar{
+    background:#fff;border-bottom:1px solid var(--gris-300);
+    padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
+    gap:12px;flex-wrap:wrap;
+  }
+  .topbar h2{margin:0;font-size:1.1rem;color:var(--azul-950);}
+  .btn-menu-movil{display:none;}
+  .banner-modo{
+    font-size:.75rem;padding:4px 10px;border-radius:20px;font-weight:600;
+  }
+  .banner-modo.demo{background:#fff8e6;color:#8a6100;}
+  .banner-modo.firebase{background:#e7f7ee;color:#1c7a43;}
+
+  .zona{padding:22px 24px;flex:1;overflow-y:auto;}
+  .zona h3{margin:0 0 14px;color:var(--azul-950);font-size:1rem;}
+
+  /* ---------- Tarjetas de eventos ---------- */
+  .alerta-choque{
+    background:#fdecea;border:1px solid #f3c3bc;color:var(--rojo);
+    padding:12px 14px;border-radius:8px;margin-bottom:16px;font-size:.85rem;font-weight:600;
+  }
+  .lista-eventos{display:flex;flex-direction:column;gap:10px;}
+  .tarjeta-evento{
+    background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);
+    padding:14px 16px;display:flex;gap:14px;align-items:flex-start;
+    box-shadow:var(--sombra);cursor:pointer;position:relative;
+  }
+  .tarjeta-evento:hover{border-color:var(--azul-700);}
+  .semaforo-dot{
+    width:13px;height:13px;border-radius:50%;flex-shrink:0;margin-top:4px;
+    box-shadow:0 0 0 3px rgba(0,0,0,.04);
+  }
+  .semaforo-dot.verde{background:var(--verde);}
+  .semaforo-dot.amarillo{background:var(--amarillo);}
+  .semaforo-dot.rojo{background:var(--rojo);}
+  .te-hora{font-weight:700;color:var(--azul-950);font-size:.85rem;min-width:96px;}
+  .te-cuerpo{flex:1;min-width:0;}
+  .te-titulo{font-weight:600;font-size:.95rem;color:var(--gris-900);}
+  .te-meta{font-size:.78rem;color:var(--gris-500);margin-top:2px;}
+  .te-badges{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+  .badge{font-size:.68rem;padding:2px 8px;border-radius:20px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;}
+  .badge-tipo{background:var(--azul-100);color:var(--azul-900);}
+  .badge-prioridad-alta{background:#fdecea;color:var(--rojo);}
+  .badge-prioridad-media{background:#fff8e6;color:#8a6100;}
+  .badge-prioridad-baja{background:#eef4ea;color:#3c7a2e;}
+  .badge-reservado{background:var(--azul-950);color:var(--oro);}
+  .badge-choque{background:var(--rojo);color:#fff;}
+  .vacio{color:var(--gris-500);font-size:.88rem;padding:20px;text-align:center;}
+
+  .cabecera-vista{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+  .acciones-vista{display:flex;gap:8px;flex-wrap:wrap;}
+
+  /* filtros eventos */
+  .filtros{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .filtros select, .filtros input{
+    padding:8px 10px;border:1px solid var(--gris-300);border-radius:8px;font-size:.82rem;
+  }
+
+  /* ---------- Modal ---------- */
+  .fondo-modal{
+    display:none;position:fixed;inset:0;background:rgba(11,31,58,.55);
+    align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:50;
+  }
+  .fondo-modal.activo{display:flex;}
+  .caja-modal{
+    background:#fff;border-radius:var(--radio);width:100%;max-width:640px;
+    box-shadow:0 20px 60px rgba(0,0,0,.3);margin-bottom:30px;
+  }
+  .modal-header{
+    padding:18px 22px;border-bottom:1px solid var(--gris-300);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .modal-header h3{margin:0;font-size:1.05rem;color:var(--azul-950);}
+  .modal-header button{background:none;border:none;font-size:1.3rem;color:var(--gris-500);}
+  .modal-body{padding:20px 22px;}
+  .modal-footer{padding:16px 22px;border-top:1px solid var(--gris-300);display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
+  .fila-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:520px){.fila-2{grid-template-columns:1fr;}}
+
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--gris-300);margin-bottom:16px;}
+  .tab-btn{
+    padding:9px 14px;font-size:.82rem;font-weight:600;color:var(--gris-500);
+    background:none;border:none;border-bottom:2px solid transparent;
+  }
+  .tab-btn.activo{color:var(--azul-900);border-bottom-color:var(--azul-900);}
+  .tab-panel{display:none;}
+  .tab-panel.activo{display:block;}
+
+  .checklist-item{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--gris-100);font-size:.88rem;}
+  .checklist-item input[type=checkbox]{width:16px;height:16px;}
+  .checklist-item input[type=text]{flex:1;border:none;border-bottom:1px dashed var(--gris-300);padding:2px 4px;background:transparent;}
+  .fila-agregar-item{display:flex;gap:8px;margin-top:10px;}
+  .fila-agregar-item input{flex:1;}
+
+  .historial-fila{padding:10px 0;border-bottom:1px solid var(--gris-100);font-size:.82rem;}
+  .historial-fila .campo-cambiado{font-weight:700;color:var(--azul-900);}
+  .historial-fila .quien{color:var(--gris-500);font-size:.75rem;margin-top:2px;}
+
+  .vista-lectura-evento{padding:6px 0;}
+  .vista-lectura-evento .dato{margin-bottom:10px;}
+  .vista-lectura-evento .dato label{display:block;font-size:.72rem;color:var(--gris-500);text-transform:uppercase;font-weight:700;}
+  .vista-lectura-evento .dato span{font-size:.95rem;}
+
+  #mapaEventoBox, #mapaBusquedaBox{
+    height:220px;border-radius:8px;border:1px solid var(--gris-300);
+    background:var(--azul-050);display:flex;align-items:center;justify-content:center;
+    color:var(--gris-500);font-size:.82rem;text-align:center;padding:16px;
+  }
+
+  /* ---------- Métricas ---------- */
+  .tarjetas-resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px;}
+  .resumen-card{background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);padding:16px;box-shadow:var(--sombra);}
+  .resumen-card .num{font-size:1.6rem;font-weight:800;color:var(--azul-950);}
+  .resumen-card .lbl{font-size:.75rem;color:var(--gris-500);margin-top:2px;}
+  .bloque-metrica{background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);padding:18px;margin-bottom:16px;box-shadow:var(--sombra);}
+  .bloque-metrica h4{margin:0 0 12px;font-size:.9rem;color:var(--azul-950);}
+  .barra-metrica{margin-bottom:10px;}
+  .barra-metrica .top{display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:4px;color:var(--gris-700);}
+  .barra-metrica .pista{background:var(--gris-100);border-radius:6px;height:9px;overflow:hidden;}
+  .barra-metrica .relleno{background:var(--azul-700);height:100%;border-radius:6px;}
+
+  /* ---------- Backup ---------- */
+  .panel-config{background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);padding:20px;box-shadow:var(--sombra);max-width:640px;}
+  .panel-config p{font-size:.85rem;color:var(--gris-700);line-height:1.5;}
+  .estado-conexion{display:flex;gap:10px;align-items:center;margin-bottom:16px;}
+  .punto-estado{width:10px;height:10px;border-radius:50%;}
+  .punto-estado.demo{background:var(--amarillo);}
+  .punto-estado.firebase{background:var(--verde);}
+
+  @media(max-width:860px){
+    .barra-lateral{
+      position:fixed;top:0;left:0;bottom:0;z-index:40;
+      transform:translateX(-100%);transition:transform .2s;
+    }
+    .barra-lateral.abierta{transform:translateX(0);}
+    .btn-menu-movil{display:inline-flex;}
+    .contenido{width:100%;}
+  }
+</style>
+</head>
+<body>
+
+<!-- =================== LOGIN =================== -->
+<div id="pantallaLogin">
+  <div class="caja-login">
+    <h1>Agenda Digital</h1>
+    <p class="sub">Despacho del Gobernador — acceso restringido</p>
+    <div id="loginError"></div>
+    <div id="loginDemoAviso"></div>
+    <form id="formLogin">
+      <div class="campo">
+        <label for="loginEmail">Correo</label>
+        <input type="email" id="loginEmail" required autocomplete="username">
+      </div>
+      <div class="campo">
+        <label for="loginPass">Contraseña</label>
+        <input type="password" id="loginPass" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primario btn-bloque">Ingresar</button>
+    </form>
+    <div class="demo-cuentas" id="cuentasDemoInfo"></div>
+  </div>
+</div>
+
+<!-- =================== APP =================== -->
+<div id="appShell">
+  <aside class="barra-lateral" id="barraLateral">
+    <div class="marca">
+      <div class="titulo">Agenda Digital</div>
+      <div class="subtitulo">DESPACHO DEL GOBERNADOR</div>
+    </div>
+    <div class="nav-item activo" data-vista="diaria">📅 Vista diaria</div>
+    <div class="nav-item" data-vista="eventos">🗂️ Eventos</div>
+    <div class="nav-item" data-vista="metricas">📊 Métricas</div>
+    <div class="nav-item" data-vista="backup">⚙️ Config / Respaldo</div>
+    <div class="nav-sep"></div>
+    <div class="caja-usuario">
+      <div class="correo" id="cajaUsuarioCorreo">—</div>
+      <span class="rol-pill" id="cajaUsuarioRol">—</span>
+      <br>
+      <button class="btn btn-secundario" id="btnLogout" style="margin-top:10px;">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <div class="contenido">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn btn-secundario btn-menu-movil" id="btnMenuMovil">☰</button>
+        <h2 id="tituloVista">Vista diaria</h2>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="banner-modo" id="bannerModo">—</span>
+      </div>
+    </div>
+
+    <div class="zona" id="zonaDiaria">
+      <div class="cabecera-vista">
+        <div class="acciones-vista">
+          <button class="btn btn-secundario" id="btnDiaAnterior">◀</button>
+          <input type="date" id="inputFechaDiaria" class="btn btn-secundario">
+          <button class="btn btn-secundario" id="btnDiaSiguiente">▶</button>
+        </div>
+        <div class="acciones-vista">
+          <button class="btn btn-secundario" id="btnExportarPDF">⬇ Exportar carpeta del día</button>
+          <button class="btn btn-oro" id="btnNuevoEventoDiaria">+ Nuevo evento</button>
+        </div>
+      </div>
+      <div id="alertaChoqueDiaria"></div>
+      <div class="lista-eventos" id="listaEventosDiaria"></div>
+    </div>
+
+    <div class="zona" id="zonaEventos" style="display:none;">
+      <div class="cabecera-vista">
+        <div class="filtros">
+          <select id="filtroTipo"><option value="">Todos los tipos</option></select>
+          <select id="filtroEstado"><option value="">Todos los estados</option></select>
+          <input type="text" id="filtroTexto" placeholder="Buscar por título o lugar...">
+        </div>
+        <button class="btn btn-oro" id="btnNuevoEventoLista">+ Nuevo evento</button>
+      </div>
+      <div class="lista-eventos" id="listaEventosTodos"></div>
+    </div>
+
+    <div class="zona" id="zonaMetricas" style="display:none;"></div>
+
+    <div class="zona" id="zonaBackup" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- =================== MODAL EVENTO =================== -->
+<div class="fondo-modal" id="fondoModalEvento">
+  <div class="caja-modal">
+    <div class="modal-header">
+      <h3 id="modalEventoTitulo">Nuevo evento</h3>
+      <button id="btnCerrarModalEvento">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="modalEventoError"></div>
+
+      <!-- Vista lectura (rol lectura) -->
+      <div id="vistaLecturaEvento" class="vista-lectura-evento" style="display:none;"></div>
+
+      <!-- Vista operativa (admin/editor) -->
+      <div id="vistaOperativaEvento">
+        <div class="tabs">
+          <button class="tab-btn activo" data-tab="datos">Datos</button>
+          <button class="tab-btn" data-tab="checklist">Checklist</button>
+          <button class="tab-btn" data-tab="ubicacion">Ubicación</button>
+          <button class="tab-btn" data-tab="historial">Historial</button>
+        </div>
+
+        <div class="tab-panel activo" data-panel="datos">
+          <div class="campo"><label>Título *</label><input type="text" id="evTitulo"></div>
+          <div class="fila-2">
+            <div class="campo"><label>Inicio *</label><input type="datetime-local" id="evInicio"></div>
+            <div class="campo"><label>Fin *</label><input type="datetime-local" id="evFin"></div>
+          </div>
+          <div class="fila-2">
+            <div class="campo"><label>Lugar</label><input type="text" id="evLugar"></div>
+            <div class="campo"><label>Responsable</label><input type="text" id="evResponsable"></div>
+          </div>
+          <div class="fila-2">
+            <div class="campo"><label>Tipo</label><select id="evTipo"></select></div>
+            <div class="campo"><label>Área</label><input type="text" id="evArea"></div>
+          </div>
+          <div class="fila-2">
+            <div class="campo"><label>Estado</label><select id="evEstado"></select></div>
+            <div class="campo"><label>Prioridad</label><select id="evPrioridad"></select></div>
+          </div>
+          <div class="campo"><label>Confidencialidad</label><select id="evConfidencialidad"></select></div>
+          <div class="campo"><label>Notas</label><textarea id="evNotas" rows="3"></textarea></div>
+        </div>
+
+        <div class="tab-panel" data-panel="checklist">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:.8rem;color:var(--gris-500);">Checklist de protocolo</span>
+            <button class="btn btn-secundario" id="btnRegenerarChecklist" type="button" style="font-size:.75rem;padding:6px 10px;">Regenerar según tipo</button>
+          </div>
+          <div id="listaChecklist"></div>
+          <div class="fila-agregar-item">
+            <input type="text" id="inputNuevoItemChecklist" placeholder="Agregar ítem...">
+            <button class="btn btn-secundario" id="btnAgregarItemChecklist" type="button">Agregar</button>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-panel="ubicacion">
+          <div class="campo"><label>Buscar dirección</label><input type="text" id="evBusquedaMapa" placeholder="Escribe una dirección en Táchira..."></div>
+          <div id="mapaBusquedaBox"></div>
+          <p style="font-size:.75rem;color:var(--gris-500);margin-top:8px;" id="ubicacionGuardadaTexto"></p>
+        </div>
+
+        <div class="tab-panel" data-panel="historial">
+          <div id="listaHistorial"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-peligro" id="btnArchivarEvento" style="display:none;">Archivar evento</button>
+      <button class="btn btn-secundario" id="btnCancelarModalEvento">Cancelar</button>
+      <button class="btn btn-primario" id="btnGuardarEvento">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =====================================================================
+   1) CONFIGURACIÓN — pega aquí tus credenciales reales cuando las tengas.
+   Mientras estos campos estén vacíos, la app corre en MODO DEMO usando
+   almacenamiento local del navegador (localStorage), sin backend real.
+   ===================================================================== */
+const CONFIG = {
+  firebase: {
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
+  },
+  googleMapsApiKey: "" // se usa en el Paso 4 (mapa de Táchira)
+};
+
+const DEMO_MODE = !CONFIG.firebase.apiKey;
+
+const TACHIRA_CENTRO = { lat: 7.7669, lng: -72.2250 };
+
+const TIPOS = [
+  { v:"acto_publico", l:"Acto público" },
+  { v:"firma_convenio", l:"Firma de convenio" },
+  { v:"reunion_gabinete", l:"Reunión de gabinete" },
+  { v:"viaje", l:"Viaje" },
+  { v:"otro", l:"Otro" }
+];
+const ESTADOS = [
+  { v:"borrador", l:"Borrador" },
+  { v:"confirmado", l:"Confirmado" },
+  { v:"cancelado", l:"Cancelado" }
+];
+const PRIORIDADES = [
+  { v:"alta", l:"Alta" },
+  { v:"media", l:"Media" },
+  { v:"baja", l:"Baja" }
+];
+const CONFIDENCIALIDADES = [
+  { v:"publico", l:"Público" },
+  { v:"interno", l:"Interno" },
+  { v:"reservado", l:"Reservado" }
+];
+const PLANTILLAS_CHECKLIST = {
+  acto_publico: ["Himno","Presídium","Discurso","Cobertura de medios","Seguridad"],
+  firma_convenio: ["Documento revisado","Logotipos correctos","Firmantes confirmados"],
+  reunion_gabinete: ["Agenda previa","Minuta anterior"],
+  viaje: ["Itinerario","Hospedaje","Comitiva","Contacto local"],
+  otro: []
+};
+
+function etiqueta(lista, valor){
+  const f = lista.find(x=>x.v===valor);
+  return f ? f.l : (valor||"—");
+}
+
+/* =====================================================================
+   2) CAPA DE DATOS (Store) — misma interfaz para modo demo y modo Firebase.
+   ===================================================================== */
+const Store = { modo: DEMO_MODE ? "demo" : "firebase" };
+
+/* ---------- Implementación DEMO (localStorage) ---------- */
+const LS_USUARIOS = "agenda_demo_usuarios";
+const LS_EVENTOS = "agenda_demo_eventos";
+const LS_SESION = "agenda_demo_sesion";
+
+function demoSeed(){
+  if(!localStorage.getItem(LS_USUARIOS)){
+    localStorage.setItem(LS_USUARIOS, JSON.stringify([
+      { email:"admin@demo.com", password:"admin123", rol:"admin" },
+      { email:"editor@demo.com", password:"editor123", rol:"editor" },
+      { email:"lectura@demo.com", password:"lectura123", rol:"lectura" }
+    ]));
+  }
+  if(!localStorage.getItem(LS_EVENTOS)){
+    localStorage.setItem(LS_EVENTOS, JSON.stringify([]));
+  }
+}
+function demoGetEventos(){
+  return JSON.parse(localStorage.getItem(LS_EVENTOS) || "[]");
+}
+function demoSaveEventos(arr){
+  localStorage.setItem(LS_EVENTOS, JSON.stringify(arr));
+}
+
+if(DEMO_MODE){
+  demoSeed();
+
+  Store.login = async function(email, password){
+    const usuarios = JSON.parse(localStorage.getItem(LS_USUARIOS) || "[]");
+    const u = usuarios.find(x=>x.email.toLowerCase()===email.toLowerCase() && x.password===password);
+    if(!u) throw new Error("Correo o contraseña incorrectos.");
+    const sesion = { email:u.email, rol:u.rol };
+    localStorage.setItem(LS_SESION, JSON.stringify(sesion));
+    return sesion;
+  };
+  Store.logout = async function(){ localStorage.removeItem(LS_SESION); };
+  Store.getSesionActual = function(){
+    const s = localStorage.getItem(LS_SESION);
+    return s ? JSON.parse(s) : null;
+  };
+  Store.escucharEventos = function(callback){
+    callback(demoGetEventos());
+    return function(){}; // sin listener real, la UI vuelve a llamar tras cada escritura
+  };
+  Store.crearEvento = async function(data, usuario){
+    const eventos = demoGetEventos();
+    const nuevo = Object.assign({}, data, {
+      id: "ev_" + Date.now() + "_" + Math.random().toString(36).slice(2,7),
+      creadoPor: usuario.email,
+      fechaCreacion: new Date().toISOString(),
+      archivado: false,
+      historialCambios: []
+    });
+    eventos.push(nuevo);
+    demoSaveEventos(eventos);
+    return nuevo.id;
+  };
+  Store.actualizarEvento = async function(id, cambios, usuario){
+    const eventos = demoGetEventos();
+    const idx = eventos.findIndex(e=>e.id===id);
+    if(idx===-1) return;
+    const anterior = eventos[idx];
+    const historial = anterior.historialCambios ? anterior.historialCambios.slice() : [];
+    Object.keys(cambios).forEach(function(campo){
+      if(campo==="checklistProtocolo" || campo==="historialCambios") return;
+      const valorAnterior = anterior[campo];
+      const valorNuevo = cambios[campo];
+      if(JSON.stringify(valorAnterior) !== JSON.stringify(valorNuevo)){
+        historial.push({
+          campo: campo,
+          valorAnterior: valorAnterior===undefined ? "" : valorAnterior,
+          valorNuevo: valorNuevo===undefined ? "" : valorNuevo,
+          usuario: usuario.email,
+          fecha: new Date().toISOString()
+        });
+      }
+    });
+    eventos[idx] = Object.assign({}, anterior, cambios, { historialCambios: historial });
+    demoSaveEventos(eventos);
+  };
+  Store.archivarEvento = async function(id, usuario){
+    return Store.actualizarEvento(id, { archivado:true }, usuario);
+  };
+  Store.exportarBackupJSON = async function(){
+    return demoGetEventos();
+  };
+}
+
+/* ---------- Implementación FIREBASE ---------- */
+if(!DEMO_MODE){
+  try{
+    firebase.initializeApp(CONFIG.firebase);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    Store.login = async function(email, password){
+      const cred = await auth.signInWithEmailAndPassword(email, password);
+      const doc = await db.collection("usuarios").doc(cred.user.uid).get();
+      if(!doc.exists) throw new Error("Este usuario no tiene perfil en la colección 'usuarios'.");
+      return { email: cred.user.email, rol: doc.data().rol, uid: cred.user.uid };
+    };
+    Store.logout = async function(){ await auth.signOut(); };
+    Store.getSesionActual = function(){ return null; }; // se resuelve vía onAuthStateChanged
+    Store.onCambioAuth = function(callback){
+      return auth.onAuthStateChanged(async function(user){
+        if(!user){ callback(null); return; }
+        try{
+          const doc = await db.collection("usuarios").doc(user.uid).get();
+          callback(doc.exists ? { email:user.email, rol:doc.data().rol, uid:user.uid } : null);
+        }catch(e){ callback(null); }
+      });
+    };
+    Store.escucharEventos = function(callback){
+      return db.collection("eventos").onSnapshot(function(snap){
+        const arr = [];
+        snap.forEach(function(d){ arr.push(Object.assign({id:d.id}, d.data())); });
+        callback(arr);
+      });
+    };
+    Store.crearEvento = async function(data, usuario){
+      const ref = await db.collection("eventos").add(Object.assign({}, data, {
+        creadoPor: usuario.email,
+        fechaCreacion: new Date().toISOString(),
+        archivado: false,
+        historialCambios: []
+      }));
+      return ref.id;
+    };
+    Store.actualizarEvento = async function(id, cambios, usuario){
+      const ref = db.collection("eventos").doc(id);
+      const snap = await ref.get();
+      const anterior = snap.data() || {};
+      const historial = anterior.historialCambios ? anterior.historialCambios.slice() : [];
+      Object.keys(cambios).forEach(function(campo){
+        if(campo==="checklistProtocolo" || campo==="historialCambios") return;
+        const valorAnterior = anterior[campo];
+        const valorNuevo = cambios[campo];
+        if(JSON.stringify(valorAnterior) !== JSON.stringify(valorNuevo)){
+          historial.push({
+            campo: campo,
+            valorAnterior: valorAnterior===undefined ? "" : valorAnterior,
+            valorNuevo: valorNuevo===undefined ? "" : valorNuevo,
+            usuario: usuario.email,
+            fecha: new Date().toISOString()
+          });
+        }
+      });
+      await ref.update(Object.assign({}, cambios, { historialCambios: historial }));
+    };
+    Store.archivarEvento = async function(id, usuario){
+      return Store.actualizarEvento(id, { archivado:true }, usuario);
+    };
+    Store.exportarBackupJSON = async function(){
+      const snap = await db.collection("eventos").get();
+      const arr = [];
+      snap.forEach(function(d){ arr.push(Object.assign({id:d.id}, d.data())); });
+      return arr;
+    };
+  }catch(e){
+    console.error("No se pudo inicializar Firebase. Revisa CONFIG.firebase.", e);
+  }
+}
+
+/* =====================================================================
+   3) ESTADO EN MEMORIA
+   ===================================================================== */
+const estado = {
+  usuario: null,       // {email, rol}
+  eventos: [],          // todos los eventos no archivados visibles para el rol
+  vistaActual: "diaria",
+  fechaDiaria: new Date().toISOString().slice(0,10),
+  eventoEnEdicion: null, // objeto evento completo si se está editando, null si es nuevo
+  tabModalActiva: "datos",
+  ubicacionSeleccionada: null // {lat,lng,direccion}
+};
+
+/* =====================================================================
+   4) LÓGICA DE NEGOCIO
+   ===================================================================== */
+function eventosDelDia(fechaISO){
+  return estado.eventos.filter(function(e){
+    return !e.archivado && (e.fechaInicio || "").slice(0,10) === fechaISO;
+  }).sort(function(a,b){ return (a.fechaInicio||"").localeCompare(b.fechaInicio||""); });
+}
+
+function calcularChoques(eventosDia){
+  const choques = new Set();
+  for(let i=0;i<eventosDia.length;i++){
+    for(let j=i+1;j<eventosDia.length;j++){
+      const a=eventosDia[i], b=eventosDia[j];
+      if(!a.fechaInicio || !a.fechaFin || !b.fechaInicio || !b.fechaFin) continue;
+      const seSuperponen = (new Date(a.fechaInicio) < new Date(b.fechaFin)) && (new Date(b.fechaInicio) < new Date(a.fechaFin));
+      if(seSuperponen){ choques.add(a.id); choques.add(b.id); }
+    }
+  }
+  return choques;
+}
+
+function calcularSemaforo(evento, tieneChoque){
+  if(tieneChoque) return "rojo";
+  if(evento.fechaInicio){
+    const horas = (new Date(evento.fechaInicio) - new Date()) / 36e5;
+    if(horas < 24 && evento.estado !== "confirmado") return "rojo";
+  }
+  if(!evento.lugar || !evento.responsable) return "amarillo";
+  return "verde";
+}
+
+function esVistaLectura(){ return estado.usuario && estado.usuario.rol === "lectura"; }
+
+function eventosVisibles(){
+  return estado.eventos.filter(function(e){
+    if(e.archivado) return false;
+    if(esVistaLectura() && e.nivelConfidencialidad === "reservado") return false;
+    return true;
+  });
+}
+
+/* =====================================================================
+   5) RENDER — LOGIN
+   ===================================================================== */
+function renderLoginExtras(){
+  const cont = document.getElementById("cuentasDemoInfo");
+  const aviso = document.getElementById("loginDemoAviso");
+  if(DEMO_MODE){
+    aviso.innerHTML = '<div class="aviso-msg">Modo demostración local: no hay Firebase configurado todavía. Los datos se guardan solo en este navegador. Cuando pegues tus credenciales en <code>CONFIG.firebase</code>, la app usará Firestore/Authentication real.</div>';
+    cont.innerHTML = '<b>Cuentas de prueba (modo demo):</b><br>admin@demo.com / admin123<br>editor@demo.com / editor123<br>lectura@demo.com / lectura123';
+  }else{
+    aviso.innerHTML = "";
+    cont.innerHTML = "";
+  }
+}
+
+document.getElementById("formLogin").addEventListener("submit", async function(ev){
+  ev.preventDefault();
+  const email = document.getElementById("loginEmail").value.trim();
+  const pass = document.getElementById("loginPass").value;
+  const errBox = document.getElementById("loginError");
+  errBox.innerHTML = "";
+  try{
+    const sesion = await Store.login(email, pass);
+    if(DEMO_MODE) iniciarSesionUI(sesion);
+    // en modo Firebase, onCambioAuth dispara iniciarSesionUI automáticamente
+  }catch(e){
+    errBox.innerHTML = '<div class="error-msg">'+ (e.message || "No se pudo iniciar sesión.") +'</div>';
+  }
+});
+
+function iniciarSesionUI(usuario){
+  estado.usuario = usuario;
+  document.getElementById("pantallaLogin").style.display = "none";
+  document.getElementById("appShell").classList.add("activo");
+  document.getElementById("cajaUsuarioCorreo").textContent = usuario.email;
+  document.getElementById("cajaUsuarioRol").textContent = usuario.rol;
+  document.getElementById("bannerModo").textContent = DEMO_MODE ? "MODO DEMO (local)" : "Conectado a Firebase";
+  document.getElementById("bannerModo").className = "banner-modo " + (DEMO_MODE ? "demo" : "firebase");
+
+  // el rol 'lectura' no ve Eventos completos ni Backup con lógica interna
+  document.querySelectorAll(".nav-item[data-vista]").forEach(function(el){
+    const v = el.getAttribute("data-vista");
+    if(esVistaLectura() && (v==="backup")){
+      el.style.display = "none";
+    }else{
+      el.style.display = "flex";
+    }
+  });
+
+  suscribirEventos();
+  cambiarVista("diaria");
+}
+
+function cerrarSesionUI(){
+  estado.usuario = null;
+  estado.eventos = [];
+  document.getElementById("appShell").classList.remove("activo");
+  document.getElementById("pantallaLogin").style.display = "flex";
+  document.getElementById("formLogin").reset();
+}
+
+document.getElementById("btnLogout").addEventListener("click", async function(){
+  await Store.logout();
+  if(DEMO_MODE) cerrarSesionUI();
+});
+
+renderLoginExtras();
+
+if(!DEMO_MODE && Store.onCambioAuth){
+  Store.onCambioAuth(function(usuario){
+    if(usuario) iniciarSesionUI(usuario);
+    else cerrarSesionUI();
+  });
+}else if(DEMO_MODE){
+  const sesionPrevia = Store.getSesionActual();
+  if(sesionPrevia) iniciarSesionUI(sesionPrevia);
+}
+
+/* =====================================================================
+   6) SUSCRIPCIÓN A EVENTOS
+   ===================================================================== */
+let desuscribirEventos = null;
+function suscribirEventos(){
+  if(desuscribirEventos) desuscribirEventos();
+  desuscribirEventos = Store.escucharEventos(function(lista){
+    estado.eventos = lista;
+    renderVistaActual();
+  });
+}
+function refrescarDemo(){
+  if(DEMO_MODE) suscribirEventos();
+}
+
+/* =====================================================================
+   7) NAVEGACIÓN
+   ===================================================================== */
+document.querySelectorAll(".nav-item[data-vista]").forEach(function(el){
+  el.addEventListener("click", function(){ cambiarVista(el.getAttribute("data-vista")); });
+});
+function cambiarVista(v){
+  estado.vistaActual = v;
+  document.querySelectorAll(".nav-item[data-vista]").forEach(function(el){
+    el.classList.toggle("activo", el.getAttribute("data-vista")===v);
+  });
+  document.getElementById("zonaDiaria").style.display = v==="diaria" ? "block" : "none";
+  document.getElementById("zonaEventos").style.display = v==="eventos" ? "block" : "none";
+  document.getElementById("zonaMetricas").style.display = v==="metricas" ? "block" : "none";
+  document.getElementById("zonaBackup").style.display = v==="backup" ? "block" : "none";
+  const titulos = { diaria:"Vista diaria", eventos:"Eventos", metricas:"Métricas", backup:"Configuración / Respaldo" };
+  document.getElementById("tituloVista").textContent = titulos[v];
+  document.getElementById("barraLateral").classList.remove("abierta");
+  renderVistaActual();
+}
+document.getElementById("btnMenuMovil").addEventListener("click", function(){
+  document.getElementById("barraLateral").classList.toggle("abierta");
+});
+
+function renderVistaActual(){
+  if(estado.vistaActual==="diaria") renderVistaDiaria();
+  else if(estado.vistaActual==="eventos") renderVistaEventos();
+  else if(estado.vistaActual==="metricas") renderVistaMetricas();
+  else if(estado.vistaActual==="backup") renderVistaBackup();
+}
+
+/* =====================================================================
+   8) VISTA DIARIA
+   ===================================================================== */
+const inputFechaDiaria = document.getElementById("inputFechaDiaria");
+inputFechaDiaria.value = estado.fechaDiaria;
+inputFechaDiaria.addEventListener("change", function(){
+  estado.fechaDiaria = inputFechaDiaria.value;
+  renderVistaDiaria();
+});
+document.getElementById("btnDiaAnterior").addEventListener("click", function(){ moverDia(-1); });
+document.getElementById("btnDiaSiguiente").addEventListener("click", function(){ moverDia(1); });
+function moverDia(delta){
+  const d = new Date(estado.fechaDiaria + "T00:00:00");
+  d.setDate(d.getDate()+delta);
+  estado.fechaDiaria = d.toISOString().slice(0,10);
+  inputFechaDiaria.value = estado.fechaDiaria;
+  renderVistaDiaria();
+}
+document.getElementById("btnNuevoEventoDiaria").addEventListener("click", function(){ abrirModalEvento(null); });
+document.getElementById("btnNuevoEventoLista").addEventListener("click", function(){ abrirModalEvento(null); });
+
+function renderVistaDiaria(){
+  const cont = document.getElementById("listaEventosDiaria");
+  const alertaBox = document.getElementById("alertaChoqueDiaria");
+  let dia = eventosDelDia(estado.fechaDiaria);
+  if(esVistaLectura()) dia = dia.filter(function(e){ return e.nivelConfidencialidad !== "reservado"; });
+  const choques = calcularChoques(dia);
+
+  alertaBox.innerHTML = choques.size>0
+    ? '<div class="alerta-choque">⚠ Hay '+choques.size+' evento(s) con choque de horario en este día. Revísalos antes de confirmar la agenda.</div>'
+    : "";
+
+  if(dia.length===0){
+    cont.innerHTML = '<div class="vacio">No hay eventos para este día.</div>';
+    return;
+  }
+  cont.innerHTML = dia.map(function(e){ return tarjetaEventoHTML(e, choques.has(e.id)); }).join("");
+  cont.querySelectorAll(".tarjeta-evento").forEach(function(el){
+    el.addEventListener("click", function(){ abrirModalEvento(el.getAttribute("data-id")); });
+  });
+}
+
+function horaCorta(iso){
+  if(!iso) return "--:--";
+  const d = new Date(iso);
+  return d.toLocaleTimeString("es-VE", { hour:"2-digit", minute:"2-digit" });
+}
+
+function tarjetaEventoHTML(e, tieneChoque){
+  const sem = calcularSemaforo(e, tieneChoque);
+  if(esVistaLectura()){
+    return '<div class="tarjeta-evento" data-id="'+e.id+'">'
+      + '<span class="semaforo-dot '+sem+'"></span>'
+      + '<span class="te-hora">'+horaCorta(e.fechaInicio)+' - '+horaCorta(e.fechaFin)+'</span>'
+      + '<div class="te-cuerpo">'
+        + '<div class="te-titulo">'+escapeHTML(e.titulo||"(sin título)")+'</div>'
+        + '<div class="te-meta">'+escapeHTML(e.lugar||"Lugar por confirmar")+' · Con: '+escapeHTML(e.responsable||"—")+'</div>'
+        + (e.notas ? '<div class="te-meta">'+escapeHTML(e.notas)+'</div>' : '')
+      + '</div></div>';
+  }
+  return '<div class="tarjeta-evento" data-id="'+e.id+'">'
+    + '<span class="semaforo-dot '+sem+'"></span>'
+    + '<span class="te-hora">'+horaCorta(e.fechaInicio)+' - '+horaCorta(e.fechaFin)+'</span>'
+    + '<div class="te-cuerpo">'
+      + '<div class="te-titulo">'+escapeHTML(e.titulo||"(sin título)")+'</div>'
+      + '<div class="te-meta">'+escapeHTML(e.lugar||"Sin lugar")+' · '+escapeHTML(e.responsable||"Sin responsable")+' · '+escapeHTML(e.area||"")+'</div>'
+      + '<div class="te-badges">'
+        + '<span class="badge badge-tipo">'+etiqueta(TIPOS,e.tipo)+'</span>'
+        + '<span class="badge badge-prioridad-'+(e.prioridad||"media")+'">'+etiqueta(PRIORIDADES,e.prioridad)+'</span>'
+        + (e.nivelConfidencialidad==="reservado" ? '<span class="badge badge-reservado">Reservado</span>' : '')
+        + (tieneChoque ? '<span class="badge badge-choque">Choque de horario</span>' : '')
+      + '</div>'
+    + '</div></div>';
+}
+
+function escapeHTML(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+
+/* =====================================================================
+   9) VISTA EVENTOS (lista completa con filtros)
+   ===================================================================== */
+(function initFiltros(){
+  const selTipo = document.getElementById("filtroTipo");
+  const selEstado = document.getElementById("filtroEstado");
+  TIPOS.forEach(function(t){ selTipo.innerHTML += '<option value="'+t.v+'">'+t.l+'</option>'; });
+  ESTADOS.forEach(function(t){ selEstado.innerHTML += '<option value="'+t.v+'">'+t.l+'</option>'; });
+  selTipo.addEventListener("change", renderVistaEventos);
+  selEstado.addEventListener("change", renderVistaEventos);
+  document.getElementById("filtroTexto").addEventListener("input", renderVistaEventos);
+})();
+
+function renderVistaEventos(){
+  const cont = document.getElementById("listaEventosTodos");
+  const tipo = document.getElementById("filtroTipo").value;
+  const est = document.getElementById("filtroEstado").value;
+  const texto = document.getElementById("filtroTexto").value.toLowerCase();
+
+  let lista = eventosVisibles().slice().sort(function(a,b){ return (a.fechaInicio||"").localeCompare(b.fechaInicio||""); });
+  if(tipo) lista = lista.filter(function(e){ return e.tipo===tipo; });
+  if(est) lista = lista.filter(function(e){ return e.estado===est; });
+  if(texto) lista = lista.filter(function(e){
+    return (e.titulo||"").toLowerCase().includes(texto) || (e.lugar||"").toLowerCase().includes(texto);
+  });
+
+  if(lista.length===0){
+    cont.innerHTML = '<div class="vacio">No se encontraron eventos con esos filtros.</div>';
+    return;
+  }
+  const todasChoques = calcularChoques(eventosVisibles());
+  cont.innerHTML = lista.map(function(e){
+    const fecha = (e.fechaInicio||"").slice(0,10);
+    return '<div style="margin-bottom:4px;">'
+      + (fecha ? '<div style="font-size:.72rem;color:var(--gris-500);font-weight:700;margin:10px 0 4px;">'+fecha+'</div>' : '')
+      + tarjetaEventoHTML(e, todasChoques.has(e.id))
+      + '</div>';
+  }).join("");
+  cont.querySelectorAll(".tarjeta-evento").forEach(function(el){
+    el.addEventListener("click", function(){ abrirModalEvento(el.getAttribute("data-id")); });
+  });
+}
+
+/* =====================================================================
+   10) MODAL DE EVENTO — abrir / cerrar / tabs
+   ===================================================================== */
+(function initSelects(){
+  const sTipo = document.getElementById("evTipo");
+  const sEstado = document.getElementById("evEstado");
+  const sPrioridad = document.getElementById("evPrioridad");
+  const sConf = document.getElementById("evConfidencialidad");
+  TIPOS.forEach(function(t){ sTipo.innerHTML += '<option value="'+t.v+'">'+t.l+'</option>'; });
+  ESTADOS.forEach(function(t){ sEstado.innerHTML += '<option value="'+t.v+'">'+t.l+'</option>'; });
+  PRIORIDADES.forEach(function(t){ sPrioridad.innerHTML += '<option value="'+t.v+'">'+t.l+'</option>'; });
+  CONFIDENCIALIDADES.forEach(function(t){ sConf.innerHTML += '<option value="'+t.v+'">'+t.l+'</option>'; });
+})();
+
+document.querySelectorAll(".tab-btn").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    const tab = btn.getAttribute("data-tab");
+    estado.tabModalActiva = tab;
+    document.querySelectorAll(".tab-btn").forEach(function(b){ b.classList.toggle("activo", b===btn); });
+    document.querySelectorAll(".tab-panel").forEach(function(p){ p.classList.toggle("activo", p.getAttribute("data-panel")===tab); });
+  });
+});
+
+function abrirModalEvento(id){
+  const evento = id ? estado.eventos.find(function(e){ return e.id===id; }) : null;
+  estado.eventoEnEdicion = evento || null;
+  estado.ubicacionSeleccionada = evento && evento.lat ? { lat:evento.lat, lng:evento.lng, direccion:evento.lugar } : null;
+  document.getElementById("modalEventoError").innerHTML = "";
+  document.getElementById("modalEventoTitulo").textContent = evento ? "Detalle del evento" : "Nuevo evento";
+  document.getElementById("btnArchivarEvento").style.display = evento ? "inline-flex" : "none";
+
+  const vistaLectura = esVistaLectura();
+  document.getElementById("vistaLecturaEvento").style.display = vistaLectura ? "block" : "none";
+  document.getElementById("vistaOperativaEvento").style.display = vistaLectura ? "none" : "block";
+  document.getElementById("btnGuardarEvento").style.display = vistaLectura ? "none" : "inline-flex";
+  document.getElementById("btnArchivarEvento").style.display = (evento && !vistaLectura) ? "inline-flex" : "none";
+
+  if(vistaLectura){
+    const cont = document.getElementById("vistaLecturaEvento");
+    cont.innerHTML = evento ? (
+      '<div class="dato"><label>Título</label><span>'+escapeHTML(evento.titulo)+'</span></div>'
+      + '<div class="dato"><label>Horario</label><span>'+horaCorta(evento.fechaInicio)+' - '+horaCorta(evento.fechaFin)+'</span></div>'
+      + '<div class="dato"><label>Lugar</label><span>'+escapeHTML(evento.lugar||"Por confirmar")+'</span></div>'
+      + '<div class="dato"><label>Con quién</label><span>'+escapeHTML(evento.responsable||"—")+'</span></div>'
+      + '<div class="dato"><label>Nota</label><span>'+escapeHTML(evento.notas||"—")+'</span></div>'
+    ) : '<div class="vacio">Sin datos.</div>';
+  }else{
+    document.getElementById("evTitulo").value = evento ? evento.titulo||"" : "";
+    document.getElementById("evInicio").value = evento ? (evento.fechaInicio||"").slice(0,16) : "";
+    document.getElementById("evFin").value = evento ? (evento.fechaFin||"").slice(0,16) : "";
+    document.getElementById("evLugar").value = evento ? evento.lugar||"" : "";
+    document.getElementById("evResponsable").value = evento ? evento.responsable||"" : "";
+    document.getElementById("evTipo").value = evento ? evento.tipo||"otro" : "otro";
+    document.getElementById("evArea").value = evento ? evento.area||"" : "";
+    document.getElementById("evEstado").value = evento ? evento.estado||"borrador" : "borrador";
+    document.getElementById("evPrioridad").value = evento ? evento.prioridad||"media" : "media";
+    document.getElementById("evConfidencialidad").value = evento ? evento.nivelConfidencialidad||"interno" : "interno";
+    document.getElementById("evNotas").value = evento ? evento.notas||"" : "";
+
+    renderChecklist(evento ? (evento.checklistProtocolo||[]) : plantillaChecklist(document.getElementById("evTipo").value));
+    renderHistorial(evento ? (evento.historialCambios||[]) : []);
+    renderUbicacionTab();
+
+    document.querySelectorAll(".tab-btn")[0].click();
+  }
+
+  document.getElementById("fondoModalEvento").classList.add("activo");
+}
+document.getElementById("btnCerrarModalEvento").addEventListener("click", cerrarModalEvento);
+document.getElementById("btnCancelarModalEvento").addEventListener("click", cerrarModalEvento);
+function cerrarModalEvento(){
+  document.getElementById("fondoModalEvento").classList.remove("activo");
+  estado.eventoEnEdicion = null;
+}
+
+/* ---------- checklist ---------- */
+let checklistTemp = [];
+function plantillaChecklist(tipo){
+  return (PLANTILLAS_CHECKLIST[tipo]||[]).map(function(item){ return { item:item, cumplido:false }; });
+}
+function renderChecklist(items){
+  checklistTemp = items.slice();
+  pintarChecklist();
+}
+function pintarChecklist(){
+  const cont = document.getElementById("listaChecklist");
+  if(checklistTemp.length===0){
+    cont.innerHTML = '<div class="vacio">Sin ítems de checklist. Agrega uno abajo o regenera según el tipo.</div>';
+    return;
+  }
+  cont.innerHTML = checklistTemp.map(function(it, idx){
+    return '<div class="checklist-item">'
+      + '<input type="checkbox" data-idx="'+idx+'" '+(it.cumplido?"checked":"")+'>'
+      + '<input type="text" data-idx="'+idx+'" data-campo="item" value="'+escapeHTML(it.item)+'">'
+      + '<button type="button" class="btn btn-peligro" data-idx="'+idx+'" data-accion="quitar" style="padding:4px 8px;font-size:.7rem;">Quitar</button>'
+      + '</div>';
+  }).join("");
+  cont.querySelectorAll('input[type=checkbox]').forEach(function(el){
+    el.addEventListener("change", function(){ checklistTemp[+el.getAttribute("data-idx")].cumplido = el.checked; });
+  });
+  cont.querySelectorAll('input[type=text]').forEach(function(el){
+    el.addEventListener("input", function(){ checklistTemp[+el.getAttribute("data-idx")].item = el.value; });
+  });
+  cont.querySelectorAll('[data-accion=quitar]').forEach(function(el){
+    el.addEventListener("click", function(){ checklistTemp.splice(+el.getAttribute("data-idx"),1); pintarChecklist(); });
+  });
+}
+document.getElementById("btnRegenerarChecklist").addEventListener("click", function(){
+  renderChecklist(plantillaChecklist(document.getElementById("evTipo").value));
+});
+document.getElementById("btnAgregarItemChecklist").addEventListener("click", function(){
+  const input = document.getElementById("inputNuevoItemChecklist");
+  if(!input.value.trim()) return;
+  checklistTemp.push({ item:input.value.trim(), cumplido:false });
+  input.value = "";
+  pintarChecklist();
+});
+document.getElementById("evTipo").addEventListener("change", function(){
+  if(!estado.eventoEnEdicion){ renderChecklist(plantillaChecklist(document.getElementById("evTipo").value)); }
+});
+
+/* ---------- historial ---------- */
+function renderHistorial(hist){
+  const cont = document.getElementById("listaHistorial");
+  if(!hist || hist.length===0){
+    cont.innerHTML = '<div class="vacio">Sin cambios registrados todavía.</div>';
+    return;
+  }
+  cont.innerHTML = hist.slice().reverse().map(function(h){
+    return '<div class="historial-fila">'
+      + '<span class="campo-cambiado">'+escapeHTML(h.campo)+'</span> cambió de "'+escapeHTML(h.valorAnterior)+'" a "'+escapeHTML(h.valorNuevo)+'"'
+      + '<div class="quien">'+escapeHTML(h.usuario)+' · '+new Date(h.fecha).toLocaleString("es-VE")+'</div>'
+      + '</div>';
+  }).join("");
+}
+
+/* ---------- ubicación / mapa (Paso 4 — se activa con googleMapsApiKey) ---------- */
+function renderUbicacionTab(){
+  const texto = document.getElementById("ubicacionGuardadaTexto");
+  const box = document.getElementById("mapaBusquedaBox");
+  if(estado.ubicacionSeleccionada){
+    texto.textContent = "Ubicación guardada: " + (estado.ubicacionSeleccionada.direccion||"") +
+      " (" + estado.ubicacionSeleccionada.lat.toFixed(5) + ", " + estado.ubicacionSeleccionada.lng.toFixed(5) + ")";
+  }else{
+    texto.textContent = "Sin ubicación guardada todavía.";
+  }
+  if(!CONFIG.googleMapsApiKey){
+    box.innerHTML = "Agrega tu clave de Google Maps en <code>CONFIG.googleMapsApiKey</code> para activar la búsqueda de direcciones y el mapa de Táchira (Paso 4).";
+  }else{
+    box.innerHTML = "Mapa disponible: la carga real del mapa de Google se activa según la clave configurada.";
+    // Punto de integración real del Paso 4: cargar Maps JS API + Places Autocomplete
+    // sobre #mapaBusquedaBox usando CONFIG.googleMapsApiKey y centrar en TACHIRA_CENTRO,
+    // y al confirmar un lugar, guardar { lat, lng } en estado.ubicacionSeleccionada.
+  }
+}
+
+/* ---------- guardar / archivar ---------- */
+document.getElementById("btnGuardarEvento").addEventListener("click", async function(){
+  const errBox = document.getElementById("modalEventoError");
+  errBox.innerHTML = "";
+
+  const titulo = document.getElementById("evTitulo").value.trim();
+  const inicio = document.getElementById("evInicio").value;
+  const fin = document.getElementById("evFin").value;
+
+  if(!titulo){ errBox.innerHTML = '<div class="error-msg">El título es obligatorio.</div>'; return; }
+  if(!inicio){ errBox.innerHTML = '<div class="error-msg">La fecha/hora de inicio es obligatoria.</div>'; return; }
+  if(fin && new Date(fin) < new Date(inicio)){
+    errBox.innerHTML = '<div class="error-msg">La hora de fin no puede ser anterior a la hora de inicio.</div>';
+    return;
+  }
+
+  const datos = {
+    titulo: titulo,
+    fechaInicio: new Date(inicio).toISOString(),
+    fechaFin: fin ? new Date(fin).toISOString() : "",
+    lugar: document.getElementById("evLugar").value.trim(),
+    responsable: document.getElementById("evResponsable").value.trim(),
+    tipo: document.getElementById("evTipo").value,
+    area: document.getElementById("evArea").value.trim(),
+    estado: document.getElementById("evEstado").value,
+    prioridad: document.getElementById("evPrioridad").value,
+    nivelConfidencialidad: document.getElementById("evConfidencialidad").value,
+    notas: document.getElementById("evNotas").value.trim(),
+    checklistProtocolo: checklistTemp
+  };
+  if(estado.ubicacionSeleccionada){
+    datos.lat = estado.ubicacionSeleccionada.lat;
+    datos.lng = estado.ubicacionSeleccionada.lng;
+  }
+
+  try{
+    if(estado.eventoEnEdicion){
+      await Store.actualizarEvento(estado.eventoEnEdicion.id, datos, estado.usuario);
+    }else{
+      await Store.crearEvento(datos, estado.usuario);
+    }
+    cerrarModalEvento();
+    refrescarDemo();
+  }catch(e){
+    errBox.innerHTML = '<div class="error-msg">'+(e.message||"No se pudo guardar el evento.")+'</div>';
+  }
+});
+
+document.getElementById("btnArchivarEvento").addEventListener("click", async function(){
+  if(!estado.eventoEnEdicion) return;
+  if(!confirm("¿Archivar este evento? No se eliminará, solo dejará de aparecer en las vistas activas.")) return;
+  await Store.archivarEvento(estado.eventoEnEdicion.id, estado.usuario);
+  cerrarModalEvento();
+  refrescarDemo();
+});
+
+/* =====================================================================
+   11) MÉTRICAS
+   ===================================================================== */
+function renderVistaMetricas(){
+  const cont = document.getElementById("zonaMetricas");
+  const hoy = new Date();
+  const mesActual = hoy.toISOString().slice(0,7);
+  const delMes = eventosVisibles().filter(function(e){ return (e.fechaInicio||"").slice(0,7)===mesActual; });
+
+  const porTipo = agrupar(delMes, "tipo", TIPOS);
+  const porEstado = agrupar(delMes, "estado", ESTADOS);
+  const porArea = {};
+  delMes.forEach(function(e){ const a=e.area||"Sin área"; porArea[a]=(porArea[a]||0)+1; });
+
+  cont.innerHTML =
+    '<div class="tarjetas-resumen">'
+      + resumenCard(delMes.length, "Eventos este mes")
+      + resumenCard(delMes.filter(function(e){return e.estado==="confirmado";}).length, "Confirmados")
+      + resumenCard(delMes.filter(function(e){return e.prioridad==="alta";}).length, "Prioridad alta")
+      + resumenCard(calcularChoques(delMes).size, "Con choque de horario")
+    + '</div>'
+    + bloqueMetrica("Por tipo de evento", porTipo, delMes.length)
+    + bloqueMetrica("Por estado", porEstado, delMes.length)
+    + bloqueMetrica("Por área", Object.keys(porArea).map(function(k){ return {l:k, n:porArea[k]}; }), delMes.length);
+}
+function agrupar(lista, campo, catalogo){
+  return catalogo.map(function(c){
+    return { l:c.l, n: lista.filter(function(e){ return e[campo]===c.v; }).length };
+  });
+}
+function resumenCard(num, lbl){
+  return '<div class="resumen-card"><div class="num">'+num+'</div><div class="lbl">'+lbl+'</div></div>';
+}
+function bloqueMetrica(titulo, filas, total){
+  const cuerpo = filas.map(function(f){
+    const pct = total>0 ? Math.round((f.n/total)*100) : 0;
+    return '<div class="barra-metrica">'
+      + '<div class="top"><span>'+escapeHTML(f.l)+'</span><span>'+f.n+'</span></div>'
+      + '<div class="pista"><div class="relleno" style="width:'+pct+'%;"></div></div>'
+      + '</div>';
+  }).join("");
+  return '<div class="bloque-metrica"><h4>'+titulo+'</h4>'+(cuerpo||'<div class="vacio">Sin datos este mes.</div>')+'</div>';
+}
+
+/* =====================================================================
+   12) EXPORTAR CARPETA DEL DÍA (PDF)
+   ===================================================================== */
+document.getElementById("btnExportarPDF").addEventListener("click", function(){
+  const dia = eventosDelDia(estado.fechaDiaria).filter(function(e){
+    return !esVistaLectura() || e.nivelConfidencialidad!=="reservado";
+  });
+  if(!window.jspdf){ alert("La librería de PDF no cargó. Verifica tu conexión a internet."); return; }
+  const doc = new window.jspdf.jsPDF();
+  let y = 18;
+  doc.setFontSize(16);
+  doc.text("Carpeta del Día — " + estado.fechaDiaria, 14, y);
+  y += 10;
+  doc.setFontSize(10);
+  if(dia.length===0){
+    doc.text("No hay eventos programados para este día.", 14, y);
+  }
+  dia.forEach(function(e){
+    if(y > 270){ doc.addPage(); y = 18; }
+    doc.setFontSize(12);
+    doc.text(horaCorta(e.fechaInicio)+" - "+horaCorta(e.fechaFin)+"  "+ (e.titulo||""), 14, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.text("Lugar: " + (e.lugar||"—") + "   Responsable: " + (e.responsable||"—"), 14, y);
+    y += 5;
+    doc.text("Tipo: " + etiqueta(TIPOS,e.tipo) + "   Estado: " + etiqueta(ESTADOS,e.estado), 14, y);
+    y += 5;
+    if(e.checklistProtocolo && e.checklistProtocolo.length){
+      doc.text("Checklist: " + e.checklistProtocolo.map(function(c){ return (c.cumplido?"[X] ":"[ ] ")+c.item; }).join("  "), 14, y);
+      y += 5;
+    }
+    y += 4;
+  });
+  doc.save("carpeta-del-dia-" + estado.fechaDiaria + ".pdf");
+});
+
+/* =====================================================================
+   13) CONFIGURACIÓN / RESPALDO
+   ===================================================================== */
+function renderVistaBackup(){
+  const cont = document.getElementById("zonaBackup");
+  cont.innerHTML =
+    '<div class="panel-config">'
+      + '<div class="estado-conexion"><span class="punto-estado '+(DEMO_MODE?"demo":"firebase")+'"></span>'
+      + '<b>'+(DEMO_MODE ? "Modo demostración (localStorage)" : "Conectado a Firebase")+'</b></div>'
+      + '<p>'+(DEMO_MODE
+          ? "Para conectar Firebase real: abre <code>index.html</code>, busca el objeto <code>CONFIG.firebase</code> al inicio del script y pega ahí tu apiKey, authDomain, projectId, etc. Para el mapa, pega tu clave en <code>CONFIG.googleMapsApiKey</code>. No hace falta tocar nada más del código."
+          : "Firebase está activo. Los eventos se guardan en la colección <code>eventos</code> y los usuarios/roles en <code>usuarios</code>.")
+      + '</p>'
+      + '<button class="btn btn-oro" id="btnBackupJSON">⬇ Descargar respaldo completo (JSON)</button>'
+    + '</div>';
+
+  document.getElementById("btnBackupJSON").addEventListener("click", async function(){
+    const datos = await Store.exportarBackupJSON();
+    const blob = new Blob([JSON.stringify(datos, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "respaldo-eventos-" + new Date().toISOString().slice(0,10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
+})();
+</script>
+</body>
+</html>
