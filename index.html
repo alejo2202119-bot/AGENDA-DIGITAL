@@ -797,9 +797,9 @@ if(DEMO_MODE){
 let errorInicioFirebase = null;
 if(!DEMO_MODE){
   try{
-    await cargarScriptExterno("https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js");
-    await cargarScriptExterno("https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js");
-    await cargarScriptExterno("https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js");
+    await cargarScriptExterno("https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js");
+    await cargarScriptExterno("https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js");
+    await cargarScriptExterno("https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js");
 
     firebase.initializeApp(CONFIG.firebase);
     const auth = firebase.auth();
