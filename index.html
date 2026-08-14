@@ -289,6 +289,10 @@
     height:220px;border-radius:8px;border:1px solid var(--gris-300);
     background:var(--azul-050);display:flex;align-items:center;justify-content:center;
     color:var(--gris-500);font-size:.82rem;text-align:center;padding:16px;
+    overflow:hidden;
+  }
+  #mapaEventoBox.mapa-activo, #mapaBusquedaBox.mapa-activo{
+    display:block;padding:0;
   }
   .resultados-lugar-lista{
     position:absolute;left:0;right:0;top:100%;z-index:10;
@@ -1607,8 +1611,8 @@ let leafletListo = null;
 function cargarLeaflet(){
   if(!leafletListo){
     leafletListo = Promise.all([
-      cargarEstiloExterno("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"),
-      cargarScriptExterno("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js")
+      cargarEstiloExterno("https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"),
+      cargarScriptExterno("https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js")
     ]);
   }
   return leafletListo;
@@ -1635,17 +1639,22 @@ function renderUbicacionTab(){
   }else{
     texto.textContent = "Sin ubicación guardada todavía.";
   }
-  document.getElementById("mapaBusquedaBox").textContent = "Cargando mapa...";
+  const box = document.getElementById("mapaBusquedaBox");
+  box.classList.remove("mapa-activo");
+  box.textContent = "Cargando mapa...";
   document.getElementById("resultadosBusquedaMapa").innerHTML = "";
+  if(mapaInstancia){ mapaInstancia.remove(); }
   mapaInstancia = null;
   marcadorInstancia = null;
 }
 
 function activarMapaUbicacion(){
   const box = document.getElementById("mapaBusquedaBox");
+  box.classList.remove("mapa-activo");
   box.textContent = "Cargando mapa...";
   cargarLeaflet().then(function(){
     box.innerHTML = "";
+    box.classList.add("mapa-activo");
     const centro = estado.ubicacionSeleccionada
       ? [Number(estado.ubicacionSeleccionada.lat), Number(estado.ubicacionSeleccionada.lng)]
       : [TACHIRA_CENTRO.lat, TACHIRA_CENTRO.lng];
