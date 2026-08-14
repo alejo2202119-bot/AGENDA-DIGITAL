@@ -586,8 +586,35 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-peligro" id="btnArchivarEvento" style="display:none;">Archivar evento</button>
+      <button class="btn btn-secundario" id="btnReprogramarEvento" style="display:none;">🔁 Reprogramar</button>
       <button class="btn btn-secundario" id="btnCancelarModalEvento">Cancelar</button>
       <button class="btn btn-primario" id="btnGuardarEvento">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- =================== MODAL REPROGRAMAR EVENTO =================== -->
+<div class="fondo-modal" id="fondoModalReprogramar">
+  <div class="caja-modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h3>Reprogramar evento</h3>
+      <button id="btnCerrarModalReprogramar">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.85rem;color:var(--gris-700);">Úsalo cuando surja algo urgente y no se pueda asistir a este evento en su horario original: le pones la nueva fecha/hora y el motivo, y queda todo registrado en el Historial del evento — no se pierde ni se duplica.</p>
+      <div id="modalReprogramarError"></div>
+      <div class="fila-2">
+        <div class="campo"><label for="reprogInicio">Nueva fecha/hora de inicio *</label><input type="datetime-local" id="reprogInicio"></div>
+        <div class="campo"><label for="reprogFin">Nueva fecha/hora de fin</label><input type="datetime-local" id="reprogFin"></div>
+      </div>
+      <div class="campo">
+        <label for="reprogMotivo">Motivo (por qué se reprograma) *</label>
+        <textarea id="reprogMotivo" rows="3" placeholder="Ej: Surgió una reunión urgente con..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secundario" id="btnCancelarReprogramar">Cancelar</button>
+      <button class="btn btn-primario" id="btnConfirmarReprogramar">Confirmar reprogramación</button>
     </div>
   </div>
 </div>
@@ -714,6 +741,20 @@ function fechaLocalISO(d){
 }
 function mesLocalISO(d){
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+}
+/* Convierte un ISO guardado (UTC) al valor que espera un <input type="datetime-local">,
+   que se interpreta como hora LOCAL. Usar .slice(0,16) directo sobre el ISO guardado
+   mostraba/guardaba la hora corrida por el huso horario (ej. un evento de 10:00am se
+   veía como 2:00pm al editar, y con solo volver a guardar se corría 4 horas de verdad). */
+function datetimeLocalValor(iso){
+  if(!iso) return "";
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth()+1).padStart(2,"0");
+  const dia = String(d.getDate()).padStart(2,"0");
+  const h = String(d.getHours()).padStart(2,"0");
+  const mi = String(d.getMinutes()).padStart(2,"0");
+  return y+"-"+mo+"-"+dia+"T"+h+":"+mi;
 }
 
 /* =====================================================================
@@ -1411,7 +1452,7 @@ function renderVistaEventos(){
   }
   const todasChoques = calcularChoques(eventosVisibles());
   cont.innerHTML = lista.map(function(e){
-    const fecha = (e.fechaInicio||"").slice(0,10);
+    const fecha = e.fechaInicio ? fechaLocalISO(new Date(e.fechaInicio)) : "";
     return '<div style="margin-bottom:4px;">'
       + (fecha ? '<div style="font-size:.72rem;color:var(--gris-500);font-weight:700;margin:10px 0 4px;">'+fecha+'</div>' : '')
       + tarjetaEventoHTML(e, todasChoques.has(e.id))
@@ -1458,6 +1499,7 @@ function abrirModalEvento(id){
   document.getElementById("vistaOperativaEvento").style.display = vistaLectura ? "none" : "block";
   document.getElementById("btnGuardarEvento").style.display = vistaLectura ? "none" : "inline-flex";
   document.getElementById("btnArchivarEvento").style.display = (evento && !vistaLectura) ? "inline-flex" : "none";
+  document.getElementById("btnReprogramarEvento").style.display = (evento && !vistaLectura) ? "inline-flex" : "none";
 
   if(vistaLectura){
     const cont = document.getElementById("vistaLecturaEvento");
@@ -1470,8 +1512,8 @@ function abrirModalEvento(id){
     ) : '<div class="vacio">Sin datos.</div>';
   }else{
     document.getElementById("evTitulo").value = evento ? evento.titulo||"" : "";
-    document.getElementById("evInicio").value = evento ? (evento.fechaInicio||"").slice(0,16) : "";
-    document.getElementById("evFin").value = evento ? (evento.fechaFin||"").slice(0,16) : "";
+    document.getElementById("evInicio").value = evento ? datetimeLocalValor(evento.fechaInicio) : "";
+    document.getElementById("evFin").value = evento ? datetimeLocalValor(evento.fechaFin) : "";
     document.getElementById("evLugar").value = evento ? evento.lugar||"" : "";
     document.getElementById("evResponsable").value = evento ? evento.responsable||"" : "";
     document.getElementById("evTipo").value = evento ? evento.tipo||"otro" : "otro";
@@ -1929,6 +1971,54 @@ document.getElementById("btnArchivarEvento").addEventListener("click", async fun
   refrescarDemo();
 });
 
+/* ---------- Reprogramar evento (por urgencia u otro motivo) ---------- */
+document.getElementById("btnReprogramarEvento").addEventListener("click", function(){
+  if(!estado.eventoEnEdicion) return;
+  const ev = estado.eventoEnEdicion;
+  document.getElementById("modalReprogramarError").innerHTML = "";
+  document.getElementById("reprogInicio").value = datetimeLocalValor(ev.fechaInicio);
+  document.getElementById("reprogFin").value = datetimeLocalValor(ev.fechaFin);
+  document.getElementById("reprogMotivo").value = "";
+  document.getElementById("fondoModalReprogramar").classList.add("activo");
+});
+document.getElementById("btnCerrarModalReprogramar").addEventListener("click", function(){
+  document.getElementById("fondoModalReprogramar").classList.remove("activo");
+});
+document.getElementById("btnCancelarReprogramar").addEventListener("click", function(){
+  document.getElementById("fondoModalReprogramar").classList.remove("activo");
+});
+document.getElementById("btnConfirmarReprogramar").addEventListener("click", async function(){
+  const errBox = document.getElementById("modalReprogramarError");
+  errBox.innerHTML = "";
+  if(!estado.eventoEnEdicion) return;
+
+  const nuevoInicio = document.getElementById("reprogInicio").value;
+  const nuevoFin = document.getElementById("reprogFin").value;
+  const motivo = document.getElementById("reprogMotivo").value.trim();
+
+  if(!nuevoInicio){ errBox.innerHTML = '<div class="error-msg">La nueva fecha/hora de inicio es obligatoria.</div>'; return; }
+  if(!motivo){ errBox.innerHTML = '<div class="error-msg">Escribe el motivo de la reprogramación.</div>'; return; }
+  if(nuevoFin && new Date(nuevoFin) < new Date(nuevoInicio)){
+    errBox.innerHTML = '<div class="error-msg">La nueva hora de fin no puede ser anterior a la de inicio.</div>';
+    return;
+  }
+
+  const cambios = {
+    fechaInicio: new Date(nuevoInicio).toISOString(),
+    fechaFin: nuevoFin ? new Date(nuevoFin).toISOString() : "",
+    motivoReprogramacion: motivo,
+    estado: "confirmado"
+  };
+  try{
+    await Store.actualizarEvento(estado.eventoEnEdicion.id, cambios, estado.usuario);
+    document.getElementById("fondoModalReprogramar").classList.remove("activo");
+    cerrarModalEvento();
+    refrescarDemo();
+  }catch(e){
+    errBox.innerHTML = '<div class="error-msg">'+(e.message||"No se pudo reprogramar el evento.")+'</div>';
+  }
+});
+
 /* =====================================================================
    11) MÉTRICAS
    ===================================================================== */
@@ -2041,7 +2131,7 @@ function renderVistaBackup(){
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "respaldo-eventos-" + new Date().toISOString().slice(0,10) + ".json";
+    a.download = "respaldo-eventos-" + fechaLocalISO(new Date()) + ".json";
     document.body.appendChild(a);
     a.click();
     a.remove();
