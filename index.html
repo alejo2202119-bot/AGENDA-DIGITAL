@@ -566,6 +566,8 @@
           </div>
           <div id="mapaBusquedaBox"></div>
           <p style="font-size:.75rem;color:var(--gris-500);margin-top:8px;" id="ubicacionGuardadaTexto"></p>
+          <button type="button" class="btn btn-secundario btn-bloque" id="btnComoLlegar" style="margin-top:10px;">📍 Cómo llegar desde mi ubicación</button>
+          <div id="resultadoComoLlegar" style="margin-top:8px;"></div>
         </div>
 
         <div class="tab-panel" data-panel="historial">
@@ -1649,9 +1651,12 @@ function renderUbicacionTab(){
   box.classList.remove("mapa-activo", "mapa-expandido");
   box.textContent = "Cargando mapa...";
   document.getElementById("resultadosBusquedaMapa").innerHTML = "";
+  document.getElementById("resultadoComoLlegar").innerHTML = "";
   document.getElementById("btnExpandirMapa").textContent = "⛶ Expandir mapa";
   if(mapaInstancia){ mapaInstancia.remove(); }
   mapaInstancia = null;
+  rutaLayer = null;
+  marcadorMiUbicacion = null;
   marcadorInstancia = null;
 }
 
@@ -1744,6 +1749,62 @@ function guardarUbicacionSeleccionada(lat, lng, direccion){
   estado.ubicacionSeleccionada = { lat:lat, lng:lng, direccion:direccion };
   document.getElementById("ubicacionGuardadaTexto").textContent =
     "Ubicación guardada: " + direccion + " (" + lat.toFixed(5) + ", " + lng.toFixed(5) + ")";
+}
+
+/* ---------- Cómo llegar (mi ubicación -> evento), gratis vía OSRM ---------- */
+let rutaLayer = null, marcadorMiUbicacion = null;
+document.getElementById("btnComoLlegar").addEventListener("click", function(){
+  const resultado = document.getElementById("resultadoComoLlegar");
+  if(!estado.ubicacionSeleccionada){
+    resultado.innerHTML = '<div class="error-msg">Primero marca la ubicación del evento en el mapa (búscala o haz clic en el punto exacto).</div>';
+    return;
+  }
+  if(!navigator.geolocation){
+    resultado.innerHTML = '<div class="error-msg">Tu navegador no permite compartir ubicación.</div>';
+    return;
+  }
+  resultado.innerHTML = '<div class="vacio">Obteniendo tu ubicación actual...</div>';
+  navigator.geolocation.getCurrentPosition(function(pos){
+    calcularRuta(pos.coords.latitude, pos.coords.longitude);
+  }, function(err){
+    const msg = err.code === 1
+      ? "No diste permiso para usar tu ubicación. Actívalo en el navegador e intenta de nuevo."
+      : "No se pudo obtener tu ubicación actual.";
+    resultado.innerHTML = '<div class="error-msg">'+msg+'</div>';
+  }, { enableHighAccuracy:true, timeout:10000 });
+});
+
+function calcularRuta(latOrigen, lngOrigen){
+  const resultado = document.getElementById("resultadoComoLlegar");
+  resultado.innerHTML = '<div class="vacio">Calculando ruta...</div>';
+  const destino = estado.ubicacionSeleccionada;
+  const url = "https://router.project-osrm.org/route/v1/driving/"
+    + lngOrigen+","+latOrigen+";"+destino.lng+","+destino.lat
+    + "?overview=full&geometries=geojson";
+  fetch(url).then(function(r){
+    if(!r.ok) throw new Error("error_http");
+    return r.json();
+  }).then(function(data){
+    if(data.code !== "Ok" || !data.routes || !data.routes.length) throw new Error("sin_ruta");
+    const ruta = data.routes[0];
+    const km = (ruta.distance/1000).toFixed(1);
+    const minutos = Math.round(ruta.duration/60);
+    resultado.innerHTML = '<div class="aviso-msg" style="background:#e7f7ee;color:#1c7a43;border-color:#bfe6cf;">'
+      + '📍 Distancia: <b>'+km+' km</b> · Tiempo estimado: <b>'+minutos+' min</b> (en carro, aproximado)</div>';
+
+    if(mapaInstancia){
+      if(rutaLayer) mapaInstancia.removeLayer(rutaLayer);
+      if(marcadorMiUbicacion) mapaInstancia.removeLayer(marcadorMiUbicacion);
+      const puntos = ruta.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
+      rutaLayer = L.polyline(puntos, { color:"#2a4f80", weight:5 }).addTo(mapaInstancia);
+      marcadorMiUbicacion = L.circleMarker([latOrigen, lngOrigen], {
+        radius:8, color:"#fff", weight:2, fillColor:"#c8a24a", fillOpacity:1
+      }).addTo(mapaInstancia).bindPopup("Tu ubicación");
+      mapaInstancia.fitBounds(rutaLayer.getBounds(), { padding:[24,24] });
+    }
+  }).catch(function(){
+    resultado.innerHTML = '<div class="error-msg">No se pudo calcular la ruta (problema de conexión o servicio ocupado). Intenta de nuevo en unos segundos.</div>';
+  });
 }
 
 /* ---------- guardar / archivar ---------- */
