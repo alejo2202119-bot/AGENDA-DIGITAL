@@ -131,6 +131,8 @@
   .acceso-fila .quien{font-weight:600;color:var(--gris-900);}
   .acceso-fila .rol{font-size:.7rem;color:var(--gris-500);text-transform:uppercase;}
   .acceso-fila .cuando{font-size:.75rem;color:var(--gris-500);white-space:nowrap;}
+  .acceso-fila .detalle-accion{font-size:.78rem;color:var(--gris-700);text-transform:none;margin-top:2px;}
+  .acceso-fila .rol-pequeno{font-size:.68rem;color:var(--gris-500);text-transform:uppercase;font-weight:600;}
   .usuario-fila{background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;box-shadow:var(--sombra);}
   .usuario-fila .nombre{font-weight:600;font-size:.92rem;}
   .usuario-fila .uid{font-size:.7rem;color:var(--gris-500);word-break:break-all;}
@@ -385,7 +387,7 @@
 
 <!-- =================== MODAL AUDITORÍA (control de accesos) =================== -->
 <div class="fondo-modal" id="fondoModalAuditoria">
-  <div class="caja-modal" style="max-width:460px;">
+  <div class="caja-modal" style="max-width:560px;">
     <div class="modal-header">
       <h3 id="tituloModalAuditoria">Control de accesos</h3>
       <button id="btnCerrarModalAuditoria">✕</button>
@@ -401,7 +403,7 @@
         <button class="btn btn-primario btn-bloque" id="btnVerAuditoria">Ver accesos</button>
       </div>
       <div id="auditoriaListaVista" style="display:none;">
-        <div id="listaAccesos"></div>
+        <div id="listaAccesos" style="max-height:420px;overflow-y:auto;"></div>
       </div>
     </div>
   </div>
@@ -799,6 +801,7 @@ const LS_EVENTOS = "agenda_demo_eventos";
 const LS_SESION = "agenda_demo_sesion";
 const LS_ACCESOS = "agenda_demo_accesos";
 const LS_RESPONSABLES_DIA = "agenda_demo_responsables_dia";
+const LS_BITACORA = "agenda_demo_bitacora";
 
 function demoSeed(){
   if(!localStorage.getItem(LS_USUARIOS)){
@@ -890,6 +893,15 @@ if(DEMO_MODE){
     const accesos = JSON.parse(localStorage.getItem(LS_ACCESOS) || "[]");
     accesos.push({ usuario:usuario, rol:rol, fecha:new Date().toISOString() });
     localStorage.setItem(LS_ACCESOS, JSON.stringify(accesos));
+  };
+  Store.registrarActividad = async function(usuario, rol, accion, detalle){
+    const acts = JSON.parse(localStorage.getItem(LS_BITACORA) || "[]");
+    acts.push({ usuario:usuario, rol:rol, accion:accion, detalle:detalle, fecha:new Date().toISOString() });
+    localStorage.setItem(LS_BITACORA, JSON.stringify(acts));
+  };
+  Store.obtenerActividad = async function(){
+    const acts = JSON.parse(localStorage.getItem(LS_BITACORA) || "[]");
+    return acts.slice().reverse();
   };
   Store.obtenerAccesos = async function(){
     const accesos = JSON.parse(localStorage.getItem(LS_ACCESOS) || "[]");
@@ -990,6 +1002,17 @@ if(!DEMO_MODE){
       try{
         await db.collection("registroAccesos").add({ usuario:usuario, rol:rol, fecha:new Date().toISOString() });
       }catch(e){ console.error("No se pudo registrar el acceso.", e); }
+    };
+    Store.registrarActividad = async function(usuario, rol, accion, detalle){
+      try{
+        await db.collection("bitacora").add({ usuario:usuario, rol:rol, accion:accion, detalle:detalle, fecha:new Date().toISOString() });
+      }catch(e){ console.error("No se pudo registrar la actividad.", e); }
+    };
+    Store.obtenerActividad = async function(){
+      const snap = await db.collection("bitacora").orderBy("fecha","desc").limit(200).get();
+      const arr = [];
+      snap.forEach(function(d){ arr.push(d.data()); });
+      return arr;
     };
     Store.obtenerAccesos = async function(){
       const snap = await db.collection("registroAccesos").orderBy("fecha","desc").limit(100).get();
@@ -1243,6 +1266,18 @@ document.getElementById("btnAuditoriaSecreta").addEventListener("click", functio
 document.getElementById("btnCerrarModalAuditoria").addEventListener("click", function(){
   document.getElementById("fondoModalAuditoria").classList.remove("activo");
 });
+const ICONOS_ACCION = {
+  login: "🔑 Inició sesión",
+  crear_evento: "🗓️ ",
+  editar_evento: "✏️ ",
+  archivar_evento: "🗑️ ",
+  reprogramar_evento: "🔁 ",
+  crear_usuario: "👤 ",
+  cambiar_rol: "🔧 ",
+  responsable_dia: "📌 ",
+  exportar_pdf: "⬇ ",
+  exportar_backup: "⬇ "
+};
 document.getElementById("btnVerAuditoria").addEventListener("click", async function(){
   const clave = document.getElementById("inputClaveAuditoria").value;
   const errBox = document.getElementById("auditoriaError");
@@ -1251,21 +1286,28 @@ document.getElementById("btnVerAuditoria").addEventListener("click", async funct
     return;
   }
   errBox.innerHTML = "";
-  let accesos;
+  let accesos, actividad;
   try{
     accesos = await Store.obtenerAccesos();
-  }catch(e){
-    errBox.innerHTML = '<div class="error-msg">No se pudo cargar el registro (falta permiso en Firestore para leer "registroAccesos" sin haber iniciado sesión). Revisa las reglas de seguridad.</div>';
-    return;
-  }
+  }catch(e){ accesos = []; }
+  try{
+    actividad = await Store.obtenerActividad();
+  }catch(e){ actividad = []; }
+
+  const combinado = accesos.map(function(a){
+    return { usuario:a.usuario, rol:a.rol, fecha:a.fecha, texto:ICONOS_ACCION.login };
+  }).concat(actividad.map(function(a){
+    return { usuario:a.usuario, rol:a.rol, fecha:a.fecha, texto:(ICONOS_ACCION[a.accion]||"") + a.detalle };
+  })).sort(function(a,b){ return new Date(b.fecha) - new Date(a.fecha); });
+
   const lista = document.getElementById("listaAccesos");
-  lista.innerHTML = accesos.length ? accesos.map(function(a){
+  lista.innerHTML = combinado.length ? combinado.map(function(a){
     return '<div class="acceso-fila">'
-      + '<div><div class="quien">'+escapeHTML(a.usuario)+'</div><div class="rol">'+escapeHTML(a.rol)+'</div></div>'
+      + '<div><div class="quien">'+escapeHTML(a.usuario)+' <span class="rol-pequeno">('+escapeHTML(a.rol)+')</span></div><div class="detalle-accion">'+escapeHTML(a.texto)+'</div></div>'
       + '<div class="cuando">'+new Date(a.fecha).toLocaleString("es-VE")+'</div>'
       + '</div>';
-  }).join("") : '<div class="vacio">Todavía no hay accesos registrados.</div>';
-  document.getElementById("tituloModalAuditoria").textContent = "Últimos accesos";
+  }).join("") : '<div class="vacio">Todavía no hay actividad registrada.</div>';
+  document.getElementById("tituloModalAuditoria").textContent = "Actividad y accesos";
   document.getElementById("auditoriaClaveVista").style.display = "none";
   document.getElementById("auditoriaListaVista").style.display = "block";
 });
@@ -1297,6 +1339,7 @@ document.getElementById("btnGuardarUsuario").addEventListener("click", async fun
   if(!password || password.length < 6){ errBox.innerHTML = '<div class="error-msg">La contraseña debe tener al menos 6 caracteres.</div>'; return; }
   try{
     await Store.crearUsuario({ usuario:nombre, correo:correo, password:password, rol:rol });
+    Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "crear_usuario", "Creó el usuario: " + nombre + " (rol: " + rol + ")");
     document.getElementById("fondoModalUsuario").classList.remove("activo");
     renderVistaUsuarios();
   }catch(e){
@@ -1322,7 +1365,7 @@ async function renderVistaUsuarios(){
   cont.innerHTML = usuarios.map(function(u){
     return '<div class="usuario-fila">'
       + '<div><div class="nombre">'+escapeHTML(u.usuario)+'</div><div class="uid">'+escapeHTML(u.uid)+'</div></div>'
-      + '<select data-uid="'+escapeHTML(u.uid)+'">'
+      + '<select data-uid="'+escapeHTML(u.uid)+'" data-nombre="'+escapeHTML(u.usuario)+'">'
         + ['admin','editor','lectura'].map(function(r){ return '<option value="'+r+'" '+(u.rol===r?"selected":"")+'>'+r+'</option>'; }).join("")
       + '</select>'
       + '</div>';
@@ -1330,6 +1373,8 @@ async function renderVistaUsuarios(){
   cont.querySelectorAll("select").forEach(function(sel){
     sel.addEventListener("change", async function(){
       await Store.actualizarRolUsuario(sel.getAttribute("data-uid"), sel.value);
+      Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "cambiar_rol",
+        "Cambió el rol de " + sel.getAttribute("data-nombre") + " a: " + sel.value);
     });
   });
 }
@@ -1432,6 +1477,7 @@ async function renderResponsableDiaBanner(){
     const valor = document.getElementById("inputResponsableDia").value.trim();
     try{
       await Store.guardarResponsableDia(fecha, valor);
+      Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "responsable_dia", "Puso como responsable del " + fecha + " a: " + (valor||"(vacío)"));
       const aviso = document.getElementById("avisoResponsableDia");
       aviso.style.display = "inline";
       setTimeout(function(){ aviso.style.display = "none"; }, 2000);
@@ -2051,11 +2097,15 @@ document.getElementById("btnGuardarEvento").addEventListener("click", async func
   }
 
   try{
+    const esNuevo = !estado.eventoEnEdicion;
     if(estado.eventoEnEdicion){
       await Store.actualizarEvento(estado.eventoEnEdicion.id, datos, estado.usuario);
     }else{
       await Store.crearEvento(datos, estado.usuario);
     }
+    Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol,
+      esNuevo ? "crear_evento" : "editar_evento",
+      (esNuevo ? "Creó el evento: " : "Editó el evento: ") + titulo);
     borrarBorradorEvento(contextoModalEvento());
     cerrarModalEvento();
     refrescarDemo();
@@ -2067,7 +2117,9 @@ document.getElementById("btnGuardarEvento").addEventListener("click", async func
 document.getElementById("btnArchivarEvento").addEventListener("click", async function(){
   if(!estado.eventoEnEdicion) return;
   if(!confirm("¿Archivar este evento? No se eliminará, solo dejará de aparecer en las vistas activas.")) return;
+  const tituloArchivado = estado.eventoEnEdicion.titulo;
   await Store.archivarEvento(estado.eventoEnEdicion.id, estado.usuario);
+  Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "archivar_evento", "Archivó el evento: " + tituloArchivado);
   cerrarModalEvento();
   refrescarDemo();
 });
@@ -2111,7 +2163,10 @@ document.getElementById("btnConfirmarReprogramar").addEventListener("click", asy
     estado: "confirmado"
   };
   try{
+    const tituloEvento = estado.eventoEnEdicion.titulo;
     await Store.actualizarEvento(estado.eventoEnEdicion.id, cambios, estado.usuario);
+    Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "reprogramar_evento",
+      "Reprogramó el evento: " + tituloEvento + " — motivo: " + motivo);
     document.getElementById("fondoModalReprogramar").classList.remove("activo");
     cerrarModalEvento();
     refrescarDemo();
@@ -2204,6 +2259,7 @@ document.getElementById("btnExportarPDF").addEventListener("click", async functi
     y += 4;
   });
   doc.save("carpeta-del-dia-" + estado.fechaDiaria + ".pdf");
+  Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "exportar_pdf", "Exportó la Carpeta del Día en PDF (" + estado.fechaDiaria + ")");
 });
 
 /* =====================================================================
@@ -2237,6 +2293,7 @@ function renderVistaBackup(){
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "exportar_backup", "Descargó un respaldo completo de todos los eventos (" + datos.length + " eventos).");
   });
 }
 
