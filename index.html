@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agenda Digital — Despacho del Gobernador</title>
+<title>Agenda Digital</title>
 
 <!-- Firebase (v8 compat) y jsPDF se cargan desde el propio script, de forma
      controlada y en orden, para no depender de cómo el sitio que aloja esta
@@ -387,7 +387,7 @@
 <div id="pantallaLogin">
   <div class="caja-login">
     <h1>Agenda Digital</h1>
-    <p class="sub">Despacho del Gobernador — acceso restringido</p>
+    <p class="sub">Acceso restringido</p>
     <div id="loginError"></div>
     <div id="loginDemoAviso"></div>
     <form id="formLogin">
@@ -472,7 +472,6 @@
   <aside class="barra-lateral" id="barraLateral">
     <div class="marca">
       <div class="titulo">Agenda Digital</div>
-      <div class="subtitulo">DESPACHO DEL GOBERNADOR</div>
     </div>
     <div class="nav-item activo" data-vista="diaria">📅 Vista diaria</div>
     <div class="nav-item" data-vista="semana">📆 Semana</div>
@@ -2444,7 +2443,7 @@ function escaparTextoICS(s){
   return String(s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\n/g,"\\n");
 }
 function generarICS(eventos){
-  const lineas = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Agenda Digital//Despacho del Gobernador//ES","CALSCALE:GREGORIAN"];
+  const lineas = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Agenda Digital//ES","CALSCALE:GREGORIAN"];
   eventos.forEach(function(e){
     if(!e.fechaInicio) return;
     lineas.push("BEGIN:VEVENT");
