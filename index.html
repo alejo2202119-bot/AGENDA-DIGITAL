@@ -137,6 +137,10 @@
   .usuario-fila .nombre{font-weight:600;font-size:.92rem;}
   .usuario-fila .uid{font-size:.7rem;color:var(--gris-500);word-break:break-all;}
   .usuario-fila select{padding:6px 8px;border:1px solid var(--gris-300);border-radius:6px;font-size:.8rem;}
+  .director-fila{background:#fff;border:1px solid var(--gris-300);border-radius:var(--radio);padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;box-shadow:var(--sombra);}
+  .director-fila .nombre{font-weight:600;font-size:.92rem;}
+  .director-fila .cargo{font-size:.78rem;color:var(--gris-500);}
+  .director-fila .area-pill{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:20px;background:var(--azul-100);color:var(--azul-900);font-size:.68rem;font-weight:700;}
 
   /* ---------- Shell principal ---------- */
   #appShell{display:none;min-height:100vh;}
@@ -479,6 +483,7 @@
     <div class="nav-item" data-vista="metricas">📊 Métricas</div>
     <div class="nav-item" data-vista="backup">⚙️ Config / Respaldo</div>
     <div class="nav-item" data-vista="usuarios">👤 Usuarios</div>
+    <div class="nav-item" data-vista="directorio">📇 Directorio</div>
     <div class="nav-sep"></div>
     <div class="caja-usuario">
       <div class="correo" id="cajaUsuarioCorreo">—</div>
@@ -555,6 +560,44 @@
       </div>
       <div id="listaUsuarios"></div>
     </div>
+
+    <div class="zona" id="zonaDirectorio" style="display:none;">
+      <div class="cabecera-vista">
+        <h3 style="margin:0;">Directorio — quién puede acompañar al Jefe</h3>
+        <button class="btn btn-oro" id="btnNuevoDirector">+ Agregar director</button>
+      </div>
+      <p style="font-size:.82rem;color:var(--gris-500);margin-top:-8px;margin-bottom:16px;">Agrega aquí una sola vez a cada director. Después, al crear un evento, los eliges de una lista en vez de escribirlos — así nunca hay errores de nombre.</p>
+      <div id="listaDirectorio"></div>
+    </div>
+  </div>
+</div>
+
+<!-- =================== MODAL NUEVO DIRECTOR =================== -->
+<div class="fondo-modal" id="fondoModalDirector">
+  <div class="caja-modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h3>Agregar director</h3>
+      <button id="btnCerrarModalDirector">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="modalDirectorError"></div>
+      <div class="campo">
+        <label for="nuevoDirectorNombre">Nombre completo</label>
+        <input type="text" id="nuevoDirectorNombre" placeholder="Ej: Juan Pérez">
+      </div>
+      <div class="campo">
+        <label for="nuevoDirectorArea">Área</label>
+        <select id="nuevoDirectorArea"></select>
+      </div>
+      <div class="campo">
+        <label for="nuevoDirectorCargo">Cargo (opcional)</label>
+        <input type="text" id="nuevoDirectorCargo" placeholder="Ej: Director de Seguridad Ciudadana">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secundario" id="btnCancelarModalDirector">Cancelar</button>
+      <button class="btn btn-primario" id="btnGuardarDirector">Guardar</button>
+    </div>
   </div>
 </div>
 
@@ -589,7 +632,7 @@
           </div>
           <div class="fila-2">
             <div class="campo"><label for="evLugar">Lugar</label><input type="text" id="evLugar"></div>
-            <div class="campo"><label for="evResponsable">Responsable de organizarlo</label><input type="text" id="evResponsable"></div>
+            <div class="campo"><label for="evResponsable">Responsable de organizarlo</label><input type="text" id="evResponsable" list="listaDirectoresDatalist" placeholder="Escribe o elige del directorio"></div>
           </div>
           <div class="fila-2">
             <div class="campo">
@@ -602,7 +645,7 @@
             </div>
             <div class="campo" id="campoDelegadoNombre" style="display:none;">
               <label for="evDelegadoNombre">Nombre del delegado</label>
-              <input type="text" id="evDelegadoNombre" placeholder="Quién va en representación">
+              <input type="text" id="evDelegadoNombre" list="listaDirectoresDatalist" placeholder="Escribe o elige del directorio">
             </div>
           </div>
           <div class="fila-2">
@@ -684,6 +727,8 @@
     </div>
   </div>
 </div>
+
+<datalist id="listaDirectoresDatalist"></datalist>
 
 <script>
 (async function(){
@@ -786,6 +831,11 @@ const ASISTENCIA_JEFE = [
   { v:"delegado", l:"Asiste un delegado" },
   { v:"no_cubierto", l:"Sin cobertura" }
 ];
+const AREAS_DIRECTORIO = [
+  "Seguridad Ciudadana","Salud","Economía y Finanzas","Infraestructura y Obras Públicas",
+  "Turismo","Educación","Ambiente","Agricultura y Tierras","Desarrollo Social",
+  "Cultura","Deporte","Vialidad y Transporte","Otro"
+];
 const PLANTILLAS_CHECKLIST = {
   acto_publico: ["Himno","Presídium","Discurso","Cobertura de medios","Seguridad"],
   firma_convenio: ["Documento revisado","Logotipos correctos","Firmantes confirmados"],
@@ -853,6 +903,7 @@ const LS_SESION = "agenda_demo_sesion";
 const LS_ACCESOS = "agenda_demo_accesos";
 const LS_RESPONSABLES_DIA = "agenda_demo_responsables_dia";
 const LS_BITACORA = "agenda_demo_bitacora";
+const LS_DIRECTORIO = "agenda_demo_directorio";
 
 function demoSeed(){
   if(!localStorage.getItem(LS_USUARIOS)){
@@ -985,6 +1036,18 @@ if(DEMO_MODE){
     datos[fecha] = nombre;
     localStorage.setItem(LS_RESPONSABLES_DIA, JSON.stringify(datos));
   };
+  Store.listarDirectorio = async function(){
+    return JSON.parse(localStorage.getItem(LS_DIRECTORIO) || "[]");
+  };
+  Store.crearDirector = async function(datos){
+    const lista = JSON.parse(localStorage.getItem(LS_DIRECTORIO) || "[]");
+    lista.push({ id:"dir_"+Date.now()+"_"+Math.random().toString(36).slice(2,7), nombre:datos.nombre, area:datos.area, cargo:datos.cargo||"" });
+    localStorage.setItem(LS_DIRECTORIO, JSON.stringify(lista));
+  };
+  Store.eliminarDirector = async function(id){
+    const lista = JSON.parse(localStorage.getItem(LS_DIRECTORIO) || "[]").filter(function(d){ return d.id!==id; });
+    localStorage.setItem(LS_DIRECTORIO, JSON.stringify(lista));
+  };
 }
 
 /* ---------- Implementación FIREBASE ---------- */
@@ -1091,6 +1154,18 @@ if(!DEMO_MODE){
     };
     Store.guardarResponsableDia = async function(fecha, nombre){
       await db.collection("responsablesDia").doc(fecha).set({ nombre: nombre });
+    };
+    Store.listarDirectorio = async function(){
+      const snap = await db.collection("directorio").orderBy("nombre").get();
+      const arr = [];
+      snap.forEach(function(d){ arr.push(Object.assign({id:d.id}, d.data())); });
+      return arr;
+    };
+    Store.crearDirector = async function(datos){
+      await db.collection("directorio").add({ nombre:datos.nombre, area:datos.area, cargo:datos.cargo||"" });
+    };
+    Store.eliminarDirector = async function(id){
+      await db.collection("directorio").doc(id).delete();
     };
     Store.crearUsuario = async function(datos){
       /* Se usa una instancia secundaria de Firebase solo para crear la
@@ -1280,7 +1355,7 @@ function iniciarSesionUI(usuario){
   // el rol 'lectura' no ve Eventos completos ni Backup; "Usuarios" es solo para admin
   document.querySelectorAll(".nav-item[data-vista]").forEach(function(el){
     const v = el.getAttribute("data-vista");
-    if((esVistaLectura() && v==="backup") || (usuario.rol!=="admin" && v==="usuarios")){
+    if((esVistaLectura() && (v==="backup" || v==="directorio")) || (usuario.rol!=="admin" && v==="usuarios")){
       el.style.display = "none";
     }else{
       el.style.display = "flex";
@@ -1288,6 +1363,7 @@ function iniciarSesionUI(usuario){
   });
 
   suscribirEventos();
+  actualizarDatalistDirectorio();
   cambiarVista("diaria");
 }
 
@@ -1329,7 +1405,9 @@ const ICONOS_ACCION = {
   responsable_dia: "📌 ",
   exportar_pdf: "⬇ ",
   exportar_backup: "⬇ ",
-  exportar_ics: "📅 "
+  exportar_ics: "📅 ",
+  crear_director: "📇 ",
+  quitar_director: "📇 "
 };
 document.getElementById("btnVerAuditoria").addEventListener("click", async function(){
   const clave = document.getElementById("inputClaveAuditoria").value;
@@ -1432,6 +1510,91 @@ async function renderVistaUsuarios(){
   });
 }
 
+/* ---------- Directorio de directores por área ---------- */
+(function initSelectArea(){
+  const sel = document.getElementById("nuevoDirectorArea");
+  AREAS_DIRECTORIO.forEach(function(a){ sel.innerHTML += '<option value="'+a+'">'+a+'</option>'; });
+})();
+
+function abrirModalDirector(){
+  document.getElementById("modalDirectorError").innerHTML = "";
+  document.getElementById("nuevoDirectorNombre").value = "";
+  document.getElementById("nuevoDirectorArea").value = AREAS_DIRECTORIO[0];
+  document.getElementById("nuevoDirectorCargo").value = "";
+  document.getElementById("fondoModalDirector").classList.add("activo");
+}
+document.getElementById("btnNuevoDirector").addEventListener("click", abrirModalDirector);
+document.getElementById("btnCerrarModalDirector").addEventListener("click", function(){
+  document.getElementById("fondoModalDirector").classList.remove("activo");
+});
+document.getElementById("btnCancelarModalDirector").addEventListener("click", function(){
+  document.getElementById("fondoModalDirector").classList.remove("activo");
+});
+document.getElementById("btnGuardarDirector").addEventListener("click", async function(){
+  const errBox = document.getElementById("modalDirectorError");
+  const nombre = document.getElementById("nuevoDirectorNombre").value.trim();
+  const area = document.getElementById("nuevoDirectorArea").value;
+  const cargo = document.getElementById("nuevoDirectorCargo").value.trim();
+  errBox.innerHTML = "";
+  if(!nombre){ errBox.innerHTML = '<div class="error-msg">Escribe el nombre del director.</div>'; return; }
+  try{
+    await Store.crearDirector({ nombre:nombre, area:area, cargo:cargo });
+    Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "crear_director", "Agregó al directorio: " + nombre + " (" + area + ")");
+    document.getElementById("fondoModalDirector").classList.remove("activo");
+    renderVistaDirectorio();
+    actualizarDatalistDirectorio();
+  }catch(e){
+    errBox.innerHTML = '<div class="error-msg">'+(e.message||"No se pudo guardar el director.")+'</div>';
+  }
+});
+
+async function renderVistaDirectorio(){
+  const cont = document.getElementById("listaDirectorio");
+  if(esVistaLectura()){
+    cont.innerHTML = '<div class="error-msg">Esta sección no está disponible para el rol de lectura.</div>';
+    return;
+  }
+  cont.innerHTML = '<div class="vacio">Cargando...</div>';
+  let lista;
+  try{
+    lista = await Store.listarDirectorio();
+  }catch(e){
+    cont.innerHTML = '<div class="error-msg">No se pudo cargar el directorio.</div>';
+    return;
+  }
+  if(!lista.length){ cont.innerHTML = '<div class="vacio">Todavía no has agregado a nadie. Dale a "+ Agregar director" para empezar.</div>'; return; }
+  lista.sort(function(a,b){ return (a.area||"").localeCompare(b.area||"") || (a.nombre||"").localeCompare(b.nombre||""); });
+  cont.innerHTML = lista.map(function(d){
+    return '<div class="director-fila">'
+      + '<div><div class="nombre">'+escapeHTML(d.nombre)+'</div>'
+        + (d.cargo ? '<div class="cargo">'+escapeHTML(d.cargo)+'</div>' : '')
+        + '<span class="area-pill">'+escapeHTML(d.area)+'</span></div>'
+      + '<button type="button" class="btn btn-peligro" data-id="'+escapeHTML(d.id)+'" data-nombre="'+escapeHTML(d.nombre)+'" style="padding:6px 12px;font-size:.75rem;">Quitar</button>'
+      + '</div>';
+  }).join("");
+  cont.querySelectorAll("button[data-id]").forEach(function(btn){
+    btn.addEventListener("click", async function(){
+      const nombre = btn.getAttribute("data-nombre");
+      if(!confirm('¿Quitar a "'+nombre+'" del directorio?')) return;
+      await Store.eliminarDirector(btn.getAttribute("data-id"));
+      Store.registrarActividad(estado.usuario.usuario, estado.usuario.rol, "quitar_director", "Quitó del directorio a: " + nombre);
+      renderVistaDirectorio();
+      actualizarDatalistDirectorio();
+    });
+  });
+}
+
+async function actualizarDatalistDirectorio(){
+  const datalist = document.getElementById("listaDirectoresDatalist");
+  if(!datalist) return;
+  try{
+    const lista = await Store.listarDirectorio();
+    datalist.innerHTML = lista.map(function(d){
+      return '<option value="'+escapeHTML(d.nombre)+'">'+escapeHTML(d.area)+'</option>';
+    }).join("");
+  }catch(e){ /* si falla, el campo sigue funcionando como texto libre */ }
+}
+
 if(!DEMO_MODE && Store.onCambioAuth){
   Store.onCambioAuth(function(usuario){
     if(usuario) iniciarSesionUI(usuario);
@@ -1474,7 +1637,8 @@ function cambiarVista(v){
   document.getElementById("zonaMetricas").style.display = v==="metricas" ? "block" : "none";
   document.getElementById("zonaBackup").style.display = v==="backup" ? "block" : "none";
   document.getElementById("zonaUsuarios").style.display = v==="usuarios" ? "block" : "none";
-  const titulos = { diaria:"Vista diaria", semana:"Semana", eventos:"Eventos", metricas:"Métricas", backup:"Configuración / Respaldo", usuarios:"Usuarios" };
+  document.getElementById("zonaDirectorio").style.display = v==="directorio" ? "block" : "none";
+  const titulos = { diaria:"Vista diaria", semana:"Semana", eventos:"Eventos", metricas:"Métricas", backup:"Configuración / Respaldo", usuarios:"Usuarios", directorio:"Directorio" };
   document.getElementById("tituloVista").textContent = titulos[v];
   document.getElementById("barraLateral").classList.remove("abierta");
   renderVistaActual();
@@ -1490,6 +1654,7 @@ function renderVistaActual(){
   else if(estado.vistaActual==="metricas") renderVistaMetricas();
   else if(estado.vistaActual==="backup") renderVistaBackup();
   else if(estado.vistaActual==="usuarios") renderVistaUsuarios();
+  else if(estado.vistaActual==="directorio") renderVistaDirectorio();
 }
 
 /* =====================================================================
