@@ -632,7 +632,11 @@
           </div>
           <div class="fila-2">
             <div class="campo"><label for="evLugar">Lugar</label><input type="text" id="evLugar"></div>
-            <div class="campo"><label for="evResponsable">Responsable de organizarlo</label><input type="text" id="evResponsable" list="listaDirectoresDatalist" placeholder="Escribe o elige del directorio"></div>
+            <div class="campo" style="position:relative;">
+              <label for="evResponsable">Responsable de organizarlo</label>
+              <input type="text" id="evResponsable" autocomplete="off" placeholder="Escribe o elige del directorio">
+              <div id="sugerenciasResponsable" class="resultados-lugar-lista"></div>
+            </div>
           </div>
           <div class="fila-2">
             <div class="campo">
@@ -643,9 +647,10 @@
                 <option value="no_cubierto">Todavía sin cobertura</option>
               </select>
             </div>
-            <div class="campo" id="campoDelegadoNombre" style="display:none;">
+            <div class="campo" id="campoDelegadoNombre" style="display:none;position:relative;">
               <label for="evDelegadoNombre">Nombre del delegado</label>
-              <input type="text" id="evDelegadoNombre" list="listaDirectoresDatalist" placeholder="Escribe o elige del directorio">
+              <input type="text" id="evDelegadoNombre" autocomplete="off" placeholder="Escribe o elige del directorio">
+              <div id="sugerenciasDelegado" class="resultados-lugar-lista"></div>
             </div>
           </div>
           <div class="fila-2">
@@ -727,8 +732,6 @@
     </div>
   </div>
 </div>
-
-<datalist id="listaDirectoresDatalist"></datalist>
 
 <script>
 (async function(){
@@ -1584,16 +1587,39 @@ async function renderVistaDirectorio(){
   });
 }
 
+let directorioCache = [];
 async function actualizarDatalistDirectorio(){
-  const datalist = document.getElementById("listaDirectoresDatalist");
-  if(!datalist) return;
-  try{
-    const lista = await Store.listarDirectorio();
-    datalist.innerHTML = lista.map(function(d){
-      return '<option value="'+escapeHTML(d.nombre)+'">'+escapeHTML(d.area)+'</option>';
-    }).join("");
-  }catch(e){ /* si falla, el campo sigue funcionando como texto libre */ }
+  try{ directorioCache = await Store.listarDirectorio(); }catch(e){ directorioCache = []; }
 }
+
+/* Sugerencias propias (no el <datalist> nativo, que se ve distinto o no
+   aparece según el navegador) — mismo estilo que el buscador del mapa. */
+function activarSugerenciasDirectorio(inputId, listaId){
+  const input = document.getElementById(inputId);
+  const lista = document.getElementById(listaId);
+  input.addEventListener("input", function(){
+    const texto = input.value.trim().toLowerCase();
+    if(!texto){ lista.innerHTML = ""; return; }
+    const coincidencias = directorioCache.filter(function(d){
+      return d.nombre.toLowerCase().includes(texto);
+    }).slice(0, 8);
+    if(!coincidencias.length){ lista.innerHTML = ""; return; }
+    lista.innerHTML = coincidencias.map(function(d, idx){
+      return '<div class="resultado-lugar" data-idx="'+idx+'">'+escapeHTML(d.nombre)+' <span style="color:var(--gris-500);">— '+escapeHTML(d.area)+'</span></div>';
+    }).join("");
+    lista.querySelectorAll(".resultado-lugar").forEach(function(el){
+      el.addEventListener("click", function(){
+        input.value = coincidencias[+el.getAttribute("data-idx")].nombre;
+        lista.innerHTML = "";
+      });
+    });
+  });
+  input.addEventListener("blur", function(){
+    setTimeout(function(){ lista.innerHTML = ""; }, 200);
+  });
+}
+activarSugerenciasDirectorio("evResponsable", "sugerenciasResponsable");
+activarSugerenciasDirectorio("evDelegadoNombre", "sugerenciasDelegado");
 
 if(!DEMO_MODE && Store.onCambioAuth){
   Store.onCambioAuth(function(usuario){
